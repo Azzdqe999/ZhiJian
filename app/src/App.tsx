@@ -1,4 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { App as CapacitorApp } from '@capacitor/app'
+import { Capacitor } from '@capacitor/core'
+import { checkForUpdate, installUpdate } from './lib/updater'
+import type { UpdateInfo } from './lib/updater'
 import { ENCODINGS, ENCODING_LABELS, countWords, decodeBytes, splitChapters, toParagraphs } from './lib/txt'
 import type { Chapter, TextEncoding } from './lib/txt'
 import {
@@ -167,6 +171,9 @@ function chapterLabel(book: BookMeta): string {
 
 function App() {
   const [nav, setNav] = useState<NavKey>('shelf')
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null)
+  const [updateHidden, setUpdateHidden] = useState(false)
+  const [updating, setUpdating] = useState(false)
   const [booted, setBooted] = useState(false)
   const [library, setLibrary] = useState<BookMeta[]>([])
   const [readingId, setReadingId] = useState<string | null>(null)
@@ -204,6 +211,84 @@ function App() {
   const hideTimer = useRef<number | null>(null)
   const dragDepth = useRef(0)
   const fileRef = useRef<HTMLInputElement | null>(null)
+
+  const backLockRef = useRef(0)
+
+  const handleBack = useCallback(() => {
+    const now = Date.now()
+    if (now - backLockRef.current < 500) return
+    backLockRef.current = now
+    const event = new CustomEvent('paper:back', { cancelable: true })
+    if (!window.dispatchEvent(event)) return
+    if (collectionDialog) { setCollectionDialog(null); return }
+    if (mapBookId) { setMapBookId(null); return }
+    if (editorTarget) { setEditorTarget(null); return }
+    if (profileId) { setProfileId(null); return }
+    if (detailId) { setDetailId(null); return }
+    if (mergePrompt) { setMergePrompt(null); return }
+    if (readingId) {
+      setReadingId(null)
+      setJump(null)
+      setJumpChapter(null)
+      return
+    }
+    if (nav !== 'shelf') { setNav('shelf'); return }
+    if (Capacitor.isNativePlatform()) void CapacitorApp.exitApp()
+  }, [collectionDialog, mapBookId, editorTarget, profileId, detailId, mergePrompt, readingId, nav])
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return
+    let remove: (() => void) | undefined
+    void CapacitorApp.addListener('backButton', () => handleBack()).then((listener) => {
+      remove = () => void listener.remove()
+    })
+    return () => remove?.()
+  }, [handleBack])
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return
+    let alive = true
+    void checkForUpdate()
+      .then((info) => {
+        if (alive && info) setUpdateInfo(info)
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  useEffect(() => {
+    let startX = 0
+    let startY = 0
+    let tracking = false
+    let lastBack = 0
+    const onStart = (event: TouchEvent) => {
+      const touch = event.touches[0]
+      if (!touch) return
+      tracking = touch.clientX <= 24
+      startX = touch.clientX
+      startY = touch.clientY
+    }
+    const onEnd = (event: TouchEvent) => {
+      if (!tracking) return
+      tracking = false
+      const touch = event.changedTouches[0]
+      if (!touch) return
+      if (touch.clientX - startX > 70 && Math.abs(touch.clientY - startY) < 60) {
+        const now = Date.now()
+        if (now - lastBack < 450) return
+        lastBack = now
+        handleBack()
+      }
+    }
+    window.addEventListener('touchstart', onStart, { passive: true })
+    window.addEventListener('touchend', onEnd, { passive: true })
+    return () => {
+      window.removeEventListener('touchstart', onStart)
+      window.removeEventListener('touchend', onEnd)
+    }
+  }, [handleBack])
 
   const showToast = useCallback((message: string) => {
     setToast(message)
@@ -1207,6 +1292,30 @@ function App() {
 
   return (
     <div className={'app theme-' + theme + (reading ? ' is-reading' : '')}>
+      {updateInfo && !updateHidden ? (
+        <div className="update-banner">
+          <div className="update-copy">
+            <strong>发现新版本 v{updateInfo.versionName}</strong>
+            <span>当前 v{updateInfo.currentVersionName}</span>
+          </div>
+          <div className="update-actions">
+            <button
+              className="btn small solid"
+              disabled={updating}
+              onClick={() => {
+                setUpdating(true)
+                void installUpdate(updateInfo.url)
+                  .then(() => showToast('已开始下载，下载完成后会弹出安装'))
+                  .catch((error) => showToast('更新失败：' + (error instanceof Error ? error.message : String(error))))
+                  .finally(() => setUpdating(false))
+              }}
+            >
+              {updating ? '准备中…' : '更新'}
+            </button>
+            <button className="btn small" onClick={() => setUpdateHidden(true)}>稍后</button>
+          </div>
+        </div>
+      ) : null}
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-cn">纸间</span>
@@ -1668,13 +1777,15 @@ function Shelf({ books, collections, collectionFilter, isSeries, onCollectionFil
           ))}
         </select>
         <button className="btn small" onClick={onCreateCollection}>＋ 收藏夹</button>
-        <span className="filter-label">系列</span>
-        <select className="select mini-select" value={seriesFilter} onChange={(event) => setSeriesFilter(event.target.value)}>
-          <option value="all">全部系列</option>
-          {seriesList.map((series) => (
-            <option key={series} value={series}>{series}</option>
-          ))}
-        </select>
+        <div className="filter-group">
+          <span className="filter-label">系列</span>
+          <select className="select mini-select" value={seriesFilter} onChange={(event) => setSeriesFilter(event.target.value)}>
+            <option value="all">全部系列</option>
+            {seriesList.map((series) => (
+              <option key={series} value={series}>{series}</option>
+            ))}
+          </select>
+        </div>
         {collectionFilter !== 'all' ? (
           <>
             <button className={'chip' + (isSeries ? ' is-on' : '')} onClick={onToggleSeries}>
@@ -1846,6 +1957,15 @@ function Reader({
   const [ratio, setRatio] = useState(book.scrollRatio || 0)
   const [attempt, setAttempt] = useState(0)
   const [selection, setSelection] = useState<{ text: string; left: number; top: number } | null>(null)
+
+  useEffect(() => {
+    const onBack = (event: Event) => {
+      if (selection) { setSelection(null); event.preventDefault(); return }
+      if (drawer) { setDrawer(false); event.preventDefault() }
+    }
+    window.addEventListener('paper:back', onBack)
+    return () => window.removeEventListener('paper:back', onBack)
+  }, [selection, drawer])
   const [aiBusy, setAiBusy] = useState(false)
 
   const pageRef = useRef<HTMLElement | null>(null)
@@ -2028,7 +2148,7 @@ function Reader({
         <button className="back" onClick={onBack}>← 书架</button>
         <button className="toc-btn" onClick={() => setDrawer(true)}>目录</button>
         <button
-          className="toc-btn"
+          className="toc-btn ai-action"
           disabled={aiBusy}
           onClick={() => {
             if (aiBusy || !chapter) return
@@ -2064,7 +2184,7 @@ function Reader({
           {aiBusy ? 'AI…' : 'AI 人物'}
         </button>
         <button
-          className="toc-btn"
+          className="toc-btn ai-action"
           disabled={aiBusy}
           onClick={() => {
             if (aiBusy || !chapter) return

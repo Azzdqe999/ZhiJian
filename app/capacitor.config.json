@@ -6,7 +6,8 @@
     "androidScheme": "https"
   },
   "android": {
-    "allowMixedContent": false
+    "allowMixedContent": false,
+    "backgroundColor": "#F6F2E9"
   },
   "plugins": {
     "CapacitorHttp": {

@@ -190,6 +190,17 @@ export default function EpubReader(props: EpubReaderProps) {
   const [atEnd, setAtEnd] = useState(false)
   const [toolbar, setToolbar] = useState<ToolbarState | null>(null)
   const [editor, setEditor] = useState<EditorState | null>(null)
+
+  useEffect(() => {
+    const onBack = (event: Event) => {
+      if (zoomImage) { setZoomImage(null); event.preventDefault(); return }
+      if (editor) { setEditor(null); event.preventDefault(); return }
+      if (toolbar) { setToolbar(null); event.preventDefault(); return }
+      if (drawer) { setDrawer(false); event.preventDefault() }
+    }
+    window.addEventListener('paper:back', onBack)
+    return () => window.removeEventListener('paper:back', onBack)
+  }, [zoomImage, editor, toolbar, drawer])
   const [lastColor, setLastColor] = useState<NoteColor>('yellow')
   const [attempt, setAttempt] = useState(0)
 
@@ -829,7 +840,7 @@ export default function EpubReader(props: EpubReaderProps) {
         <button className="back" onClick={onBack}>← 书架</button>
         <button className="toc-btn" onClick={() => setDrawer(true)}>目录</button>
         <button
-          className="toc-btn"
+          className="toc-btn ai-action"
           disabled={aiBusy}
           onClick={() => {
             if (aiBusy) return
@@ -867,7 +878,7 @@ export default function EpubReader(props: EpubReaderProps) {
           {aiBusy ? 'AI…' : 'AI 人物'}
         </button>
         <button
-          className="toc-btn"
+          className="toc-btn ai-action"
           disabled={aiBusy}
           onClick={() => {
             if (aiBusy) return

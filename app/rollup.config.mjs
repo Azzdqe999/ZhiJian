@@ -4,7 +4,7 @@ import replace from '@rollup/plugin-replace'
 
 export default {
   input: 'js/main.js',
-  output: { file: 'dist/main.js', format: 'iife', name: 'PaperApp', sourcemap: false },
+  output: { file: 'dist/main.js', format: 'iife', name: 'PaperApp', sourcemap: false, inlineDynamicImports: true },
   plugins: [
     replace({ preventAssignment: true, 'process.env.NODE_ENV': JSON.stringify('production') }),
     resolve({ browser: true, extensions: ['.js'] }),

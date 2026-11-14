@@ -4,6 +4,8 @@ import { FONT_OPTIONS } from '../lib/fonts'
 import { getSyncConfig, saveSyncConfig } from '../lib/store'
 import { syncNow, testConnection } from '../lib/sync'
 import { AI_MODELS, AI_PRESETS, EMPTY_AI, loadAiConfig, persistAiConfig, testAi } from '../lib/ai'
+import { checkForUpdate, getAppVersion, installUpdate, isNativeUpdater } from '../lib/updater'
+import type { UpdateInfo } from '../lib/updater'
 
 type Props = {
   fontSize: number
@@ -30,6 +32,10 @@ const EMPTY_SYNC: SyncConfig = {
 
 export default function SettingsPanel(props: Props) {
   const [sync, setSync] = useState<SyncConfig>(EMPTY_SYNC)
+  const [appVersion, setAppVersion] = useState('')
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null)
+  const [updateBusy, setUpdateBusy] = useState(false)
+  const [updateNote, setUpdateNote] = useState('')
   const [busy, setBusy] = useState('')
   const [status, setStatus] = useState('')
   const [ai, setAi] = useState<AiConfig>(EMPTY_AI)
@@ -41,7 +47,39 @@ export default function SettingsPanel(props: Props) {
       if (value) setSync({ ...EMPTY_SYNC, ...value })
     })
     void loadAiConfig().then(setAi)
+    if (isNativeUpdater()) {
+      void getAppVersion().then((version) => {
+        if (version) setAppVersion(version.versionName + '（' + version.versionCode + '）')
+      })
+    }
   }, [])
+
+  const onCheckUpdate = async () => {
+    setUpdateBusy(true)
+    setUpdateNote('')
+    try {
+      const info = await checkForUpdate()
+      setUpdateInfo(info)
+      setUpdateNote(info ? '发现新版本 v' + info.versionName : '已经是最新版本')
+    } catch (error) {
+      setUpdateNote('检查失败：' + (error instanceof Error ? error.message : String(error)))
+    } finally {
+      setUpdateBusy(false)
+    }
+  }
+
+  const onInstallUpdate = async () => {
+    if (!updateInfo) return
+    setUpdateBusy(true)
+    try {
+      await installUpdate(updateInfo.url)
+      setUpdateNote('已开始下载，完成后会弹出安装')
+    } catch (error) {
+      setUpdateNote('更新失败：' + (error instanceof Error ? error.message : String(error)))
+    } finally {
+      setUpdateBusy(false)
+    }
+  }
 
   const persist = async (): Promise<SyncConfig> => {
     const fixed = { ...sync, url: sync.url.trim() }
@@ -313,6 +351,30 @@ export default function SettingsPanel(props: Props) {
         </div>
         {status && <p className="setting-foot">{status}</p>}
       </section>
+
+      {isNativeUpdater() ? (
+        <section className="setting-card">
+          <h2>版本与更新</h2>
+          <div className="setting-row">
+            <div>
+              <strong>当前版本</strong>
+              <p>{appVersion || '读取中…'}</p>
+            </div>
+          </div>
+          <div className="setting-inline sync-actions">
+            <button className="btn small" onClick={onCheckUpdate} disabled={updateBusy}>
+              {updateBusy ? '检查中…' : '检查更新'}
+            </button>
+            {updateInfo ? (
+              <button className="btn small solid" onClick={onInstallUpdate} disabled={updateBusy}>
+                更新到 v{updateInfo.versionName}
+              </button>
+            ) : null}
+          </div>
+          {updateNote ? <p className="setting-foot">{updateNote}</p> : null}
+          <p className="setting-foot">更新包从 GitHub Releases 下载；安装时系统会再确认一次。</p>
+        </section>
+      ) : null}
 
       <section className="setting-card">
         <h2>本地存储</h2>
