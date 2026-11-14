@@ -1291,7 +1291,7 @@ function App() {
   }
 
   return (
-    <div className={'app theme-' + theme + (reading ? ' is-reading' : '')}>
+    <div className={'app theme-' + theme + (reading ? ' is-reading' : '') + (updateInfo && !updateHidden ? ' has-update' : '')}>
       {updateInfo && !updateHidden ? (
         <div className="update-banner">
           <div className="update-copy">
@@ -1305,7 +1305,7 @@ function App() {
               onClick={() => {
                 setUpdating(true)
                 void installUpdate(updateInfo.url)
-                  .then(() => showToast('已开始下载，下载完成后会弹出安装'))
+                  .then(() => showToast('已开始下载；首次更新需允许“安装未知应用”，授权后若没弹安装请再点一次更新'))
                   .catch((error) => showToast('更新失败：' + (error instanceof Error ? error.message : String(error))))
                   .finally(() => setUpdating(false))
               }}

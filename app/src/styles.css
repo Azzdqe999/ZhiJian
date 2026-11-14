@@ -1438,6 +1438,50 @@ input { font-family: inherit; }
 .map-canvas img { display: block; max-width: 100%; max-height: calc(86vh - 250px); }
 .map-pin {
   position: absolute;
+  transform: translate(-50%, -50%);
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 2px solid var(--card);
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-family: var(--serif);
+  font-size: 12px;
+  line-height: 22px;
+  cursor: pointer;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25);
+}
+.map-pin:hover { transform: translate(-50%, -50%) scale(1.12); }
+
+/* ---------- 应用内更新 ---------- */
+.update-banner {
+  position: fixed;
+  top: calc(10px + env(safe-area-inset-top));
+  left: 12px;
+  right: 12px;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+}
+.update-copy { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+.update-copy strong { font-family: var(--serif); font-size: 14px; font-weight: 500; }
+.update-copy span { color: var(--muted); font-size: 10px; }
+.update-actions { display: flex; align-items: center; gap: 6px; }
+
 @media (max-width: 760px) {
   .ai-action { display: none; }
+}
+
+.app.has-update .main { padding-top: 68px; }
+@media (max-width: 760px) {
+  .app.has-update .main { padding-top: 74px; }
 }

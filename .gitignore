@@ -40,3 +40,4 @@ app/cover-test.png
 app/fandom-avatars.json
 app/bgm-avatars.json
 app/wiki-chars*.json
+app/gh-*.mjs

@@ -73,7 +73,7 @@ export default function SettingsPanel(props: Props) {
     setUpdateBusy(true)
     try {
       await installUpdate(updateInfo.url)
-      setUpdateNote('已开始下载，完成后会弹出安装')
+      setUpdateNote('已开始下载；首次更新需允许“安装未知应用”，授权后若没弹安装请再点一次更新')
     } catch (error) {
       setUpdateNote('更新失败：' + (error instanceof Error ? error.message : String(error)))
     } finally {
