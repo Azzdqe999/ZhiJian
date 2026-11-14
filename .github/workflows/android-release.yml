@@ -13,7 +13,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      VERSION_CODE: ${{ github.run_number }}
+      VERSION_CODE: ${{ github.run_number + 100 }}
       ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
 
     steps:
