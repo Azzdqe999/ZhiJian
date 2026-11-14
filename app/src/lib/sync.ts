@@ -53,6 +53,19 @@ function joinUrl(base: string, name: string): string {
   return base.replace(/\/+$/, '') + '/' + FOLDER + name
 }
 
+import { Capacitor, registerPlugin } from '@capacitor/core'
+
+type DavHttpPlugin = {
+  request(options: {
+    method: string
+    url: string
+    headers: Record<string, string>
+    body?: string | null
+  }): Promise<{ status: number; body: string }>
+}
+
+const DavHttp = registerPlugin<DavHttpPlugin>('DavHttp')
+
 function basicAuth(user: string, pass: string): string {
   const bytes = new TextEncoder().encode(user + ':' + pass)
   let bin = ''
@@ -75,6 +88,13 @@ async function dav(
   if (window.paperSync) {
     const res = await window.paperSync.request({ method, url, headers, body: body ?? null })
     return { status: res.status, text: new TextDecoder().decode(toArrayBuffer(res.body)) }
+  }
+  if (Capacitor.isNativePlatform()) {
+    const res = await DavHttp.request({ method, url, headers, body: body ?? null })
+    const binary = atob(res.body || '')
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
+    return { status: res.status, text: new TextDecoder().decode(bytes) }
   }
   const res = await fetch(url, { method, headers, body })
   return { status: res.status, text: await res.text() }
