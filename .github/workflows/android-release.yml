@@ -13,7 +13,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      VERSION_CODE: ${{ github.run_number + 100 }}
       ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
 
     steps:
@@ -84,6 +83,7 @@ jobs:
 
       - name: Resolve version name
         run: |
+          echo "VERSION_CODE=$((GITHUB_RUN_NUMBER + 100))" >> "$GITHUB_ENV"
           if [[ "${GITHUB_REF_NAME}" == v* ]]; then
             echo "VERSION_NAME=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
           else
