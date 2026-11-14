@@ -1963,8 +1963,16 @@ function Reader({
       if (selection) { setSelection(null); event.preventDefault(); return }
       if (drawer) { setDrawer(false); event.preventDefault() }
     }
+    const onSelectionChange = () => {
+      const current = window.getSelection()
+      if (!current || current.isCollapsed || !current.toString().trim()) setSelection(null)
+    }
     window.addEventListener('paper:back', onBack)
-    return () => window.removeEventListener('paper:back', onBack)
+    document.addEventListener('selectionchange', onSelectionChange)
+    return () => {
+      window.removeEventListener('paper:back', onBack)
+      document.removeEventListener('selectionchange', onSelectionChange)
+    }
   }, [selection, drawer])
   const [aiBusy, setAiBusy] = useState(false)
 
@@ -2143,7 +2151,12 @@ function Reader({
   }, [book.id, onProgress, onCharacterLeave])
 
   return (
-    <main className="main reader">
+    <main
+      className="main reader"
+      onMouseDown={(event) => {
+        if (!(event.target as HTMLElement).closest('.txt-toolbar')) setSelection(null)
+      }}
+    >
       <div className="reader-top">
         <button className="back" onClick={onBack}>← 书架</button>
         <button className="toc-btn" onClick={() => setDrawer(true)}>目录</button>

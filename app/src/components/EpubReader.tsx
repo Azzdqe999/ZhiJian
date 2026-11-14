@@ -440,6 +440,19 @@ export default function EpubReader(props: EpubReaderProps) {
         } catch {
           /* 图片放大绑定失败不影响阅读 */
         }
+        try {
+          const doc = contents.document
+          const root = doc.documentElement as HTMLElement & { dataset: DOMStringMap }
+          if (!root.dataset.paperSelection) {
+            root.dataset.paperSelection = '1'
+            doc.addEventListener('selectionchange', () => {
+              const current = doc.getSelection()
+              if (!current || current.isCollapsed || !current.toString().trim()) setToolbar(null)
+            })
+          }
+        } catch {
+          /* 选区监听失败不影响阅读 */
+        }
         window.requestAnimationFrame(() => {
           try {
             scanCharacters(contents)
@@ -835,7 +848,12 @@ export default function EpubReader(props: EpubReaderProps) {
   const drawerRows = toc.length ? toc : book.toc.map((label, index) => ({ label, href: book.tocHrefs?.[index] || '', level: 0 }))
 
   return (
-    <main className="main reader epub-reader">
+    <main
+      className="main reader epub-reader"
+      onMouseDown={(event) => {
+        if (!(event.target as HTMLElement).closest('.hl-toolbar')) setToolbar(null)
+      }}
+    >
       <div className="reader-top">
         <button className="back" onClick={onBack}>← 书架</button>
         <button className="toc-btn" onClick={() => setDrawer(true)}>目录</button>
