@@ -65,6 +65,7 @@ import EpubReader from './components/EpubReader'
 import NotesPanel from './components/NotesPanel'
 import CharactersPanel from './components/CharactersPanel'
 import MapViewer from './components/MapViewer'
+import ReaderSheet from './components/ReaderSheet'
 import CharacterDrawer from './components/CharacterDrawer'
 import CharacterCard from './components/CharacterCard'
 import CharacterEditor from './components/CharacterEditor'
@@ -178,6 +179,8 @@ function App() {
   const [library, setLibrary] = useState<BookMeta[]>([])
   const [readingId, setReadingId] = useState<string | null>(null)
   const [fontSize, setFontSize] = useState(19)
+  const [readingMode, setReadingMode] = useState<'scroll' | 'paged'>('scroll')
+  const [readerSheetOpen, setReaderSheetOpen] = useState(false)
   const [fontFamily, setFontFamily] = useState<FontFamily>('serif')
   const [theme, setTheme] = useState<Theme>('paper')
   const [notes, setNotes] = useState<Note[]>([])
@@ -220,6 +223,7 @@ function App() {
     backLockRef.current = now
     const event = new CustomEvent('paper:back', { cancelable: true })
     if (!window.dispatchEvent(event)) return
+    if (readerSheetOpen) { setReaderSheetOpen(false); return }
     if (collectionDialog) { setCollectionDialog(null); return }
     if (mapBookId) { setMapBookId(null); return }
     if (editorTarget) { setEditorTarget(null); return }
@@ -234,7 +238,7 @@ function App() {
     }
     if (nav !== 'shelf') { setNav('shelf'); return }
     if (Capacitor.isNativePlatform()) void CapacitorApp.exitApp()
-  }, [collectionDialog, mapBookId, editorTarget, profileId, detailId, mergePrompt, readingId, nav])
+  }, [readerSheetOpen, collectionDialog, mapBookId, editorTarget, profileId, detailId, mergePrompt, readingId, nav])
 
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return
@@ -296,6 +300,24 @@ function App() {
     toastTimer.current = window.setTimeout(() => setToast(null), 4500)
   }, [])
 
+  const refreshLocalData = useCallback(async () => {
+    const [books, savedNotes, savedCharacters, savedImages, savedCollections] = await Promise.all([
+      listBooks(),
+      listNotes(),
+      listCharacters(),
+      listCharacterImages(),
+      listCollections(),
+    ])
+    libraryRef.current = books
+    setLibrary(books)
+    setNotes(savedNotes)
+    charactersRef.current = savedCharacters
+    setCharacters(savedCharacters)
+    imagesRef.current = savedImages
+    setCharacterImages(savedImages)
+    setCollections(savedCollections)
+  }, [])
+
   useEffect(() => {
     let alive = true
     ;(async () => {
@@ -322,6 +344,7 @@ function App() {
           setTheme(settings.theme)
           if (settings.fontFamily) setFontFamily(settings.fontFamily)
           if (typeof settings.characterMark === 'boolean') setMarkEnabled(settings.characterMark)
+          if (settings.readingMode === 'paged' || settings.readingMode === 'scroll') setReadingMode(settings.readingMode)
         }
       } catch (error) {
         if (alive) showToast('本地书架打开失败：' + (error instanceof Error ? error.message : String(error)))
@@ -335,7 +358,7 @@ function App() {
         if (Date.now() - (sync.lastSyncAt || 0) < 5 * 60 * 1000) return
         sessionStorage.setItem('paper-auto-sync', '1')
         await syncNow()
-        window.location.reload()
+        if (alive) await refreshLocalData()
       } catch {
         // 启动自动同步失败不阻塞阅读
       }
@@ -343,12 +366,12 @@ function App() {
     return () => {
       alive = false
     }
-  }, [showToast])
+  }, [showToast, refreshLocalData])
 
   useEffect(() => {
     if (!booted) return
     const timer = window.setTimeout(() => {
-      saveSettings({ fontSize, theme, fontFamily, characterMark: markEnabled }).catch(() => {})
+      saveSettings({ fontSize, theme, fontFamily, characterMark: markEnabled, readingMode }).catch(() => {})
     }, 160)
     return () => window.clearTimeout(timer)
   }, [booted, fontSize, theme, fontFamily, markEnabled])
@@ -1378,6 +1401,8 @@ function App() {
             onMakeCharacter={createCharacterFromName}
             onAiCharacters={(list, kind) => void addAiCharacters(readingScope, list, kind)}
             onOpenMap={() => setMapBookId(readingScope)}
+            readingMode={readingMode}
+            onOpenSheet={() => setReaderSheetOpen(true)}
           />
         ) : (
           <Reader
@@ -1405,6 +1430,8 @@ function App() {
             onAiCharacters={(list, kind) => void addAiCharacters(readingScope, list, kind)}
             onToast={showToast}
             onOpenMap={() => setMapBookId(readingScope)}
+            readingMode={readingMode}
+            onOpenSheet={() => setReaderSheetOpen(true)}
           />
         )
       ) : nav === 'shelf' ? (
@@ -1442,6 +1469,7 @@ function App() {
         />
       ) : (
         <SettingsPanel
+          onSynced={refreshLocalData}
           fontSize={fontSize}
           onFontSize={setFontSize}
           theme={theme}
@@ -1601,6 +1629,22 @@ function App() {
           </div>
         </div>
       )}
+
+      {readerSheetOpen && reading ? (
+        <ReaderSheet
+          fontSize={fontSize}
+          onFontSize={setFontSize}
+          fontFamily={fontFamily}
+          onFontFamily={setFontFamily}
+          theme={theme}
+          onTheme={setTheme}
+          readingMode={readingMode}
+          onReadingMode={setReadingMode}
+          markEnabled={markEnabled}
+          onToggleMark={() => setMarkEnabled((value) => !value)}
+          onClose={() => setReaderSheetOpen(false)}
+        />
+      ) : null}
 
       {collectionDialog && (
         <div className="modal-backdrop" onClick={() => setCollectionDialog(null)}>
@@ -1926,6 +1970,8 @@ type ReaderProps = {
   onAiCharacters: (list: AiCharacter[], kind: 'character' | 'place') => void
   onToast: (message: string) => void
   onOpenMap: () => void
+  readingMode: 'scroll' | 'paged'
+  onOpenSheet: () => void
 }
 
 function Reader({
@@ -1948,6 +1994,8 @@ function Reader({
   onAiCharacters,
   onToast,
   onOpenMap,
+  readingMode,
+  onOpenSheet,
 }: ReaderProps) {
   const [index, setIndex] = useState(() => Math.min(Math.max(0, book.chapterIndex), Math.max(0, book.chapterCount - 1)))
   const [chapter, setChapter] = useState<Chapter | null>(null)
@@ -1984,6 +2032,7 @@ function Reader({
   const initialRatio = useRef(book.scrollRatio || 0)
   const restored = useRef(false)
   const lastReport = useRef(0)
+  const snapTimer = useRef<number | null>(null)
 
   const paragraphs = useMemo(() => (chapter ? toParagraphs(chapter.text) : []), [chapter])
   const chapterWords = useMemo(() => (chapter ? countWords(chapter.text) : 0), [chapter])
@@ -2068,9 +2117,11 @@ function Reader({
           window.requestAnimationFrame(() => {
             const element = pageRef.current
             if (!element || !alive) return
-            const max = Math.max(0, element.scrollHeight - element.clientHeight)
+            const paged = readingMode === 'paged'
+            const max = Math.max(0, paged ? element.scrollWidth - element.clientWidth : element.scrollHeight - element.clientHeight)
             const target = !restored.current && index === initialIndex.current ? Math.min(max, initialRatio.current * max) : 0
-            element.scrollTop = target
+            if (paged) element.scrollLeft = target
+            else element.scrollTop = target
             restored.current = true
             ratioRef.current = max > 0 ? target / max : 0
             setRatio(ratioRef.current)
@@ -2134,11 +2185,39 @@ function Reader({
     if (current) current.scrollIntoView({ block: 'center' })
   }, [drawer])
 
+  useEffect(() => {
+    const element = pageRef.current
+    if (!element) return
+    const apply = () => {
+      if (readingMode === 'paged') element.style.setProperty('--page-width', element.clientWidth + 'px')
+      else element.style.removeProperty('--page-width')
+    }
+    apply()
+    window.addEventListener('resize', apply)
+    window.requestAnimationFrame(() => {
+      const paged = readingMode === 'paged'
+      const max = Math.max(0, paged ? element.scrollWidth - element.clientWidth : element.scrollHeight - element.clientHeight)
+      if (max <= 0) return
+      if (paged) element.scrollLeft = ratioRef.current * max
+      else element.scrollTop = ratioRef.current * max
+    })
+    return () => window.removeEventListener('resize', apply)
+  }, [readingMode])
+
   const handleScroll = useCallback(() => {
     const element = pageRef.current
     if (!element) return
-    const max = Math.max(0, element.scrollHeight - element.clientHeight)
-    const value = max > 60 ? Math.min(1, Math.max(0, element.scrollTop / max)) : 0
+    const paged = readingMode === 'paged'
+    const max = Math.max(0, paged ? element.scrollWidth - element.clientWidth : element.scrollHeight - element.clientHeight)
+    const position = paged ? element.scrollLeft : element.scrollTop
+    if (paged) {
+      if (snapTimer.current) window.clearTimeout(snapTimer.current)
+      snapTimer.current = window.setTimeout(() => {
+        const width = element.clientWidth
+        if (width > 0) element.scrollLeft = Math.round(element.scrollLeft / width) * width
+      }, 140)
+    }
+    const value = max > 60 ? Math.min(1, Math.max(0, position / max)) : 0
     ratioRef.current = value
     setSelection(null)
     onCharacterLeave()
@@ -2148,7 +2227,7 @@ function Reader({
       setRatio(value)
       onProgress(book.id, indexRef.current, value)
     }
-  }, [book.id, onProgress, onCharacterLeave])
+  }, [book.id, onProgress, onCharacterLeave, readingMode])
 
   return (
     <main
@@ -2233,6 +2312,7 @@ function Reader({
           {aiBusy ? 'AI…' : 'AI 地名'}
         </button>
         <button className="toc-btn" onClick={onOpenMap}>地图</button>
+        <button className="toc-btn sheet-trigger" onClick={onOpenSheet}>Aa</button>
         <div className="reader-progress"><span style={{ width: percent + '%' }} /></div>
         <div className="tools">
           <button onClick={() => setFontSize(Math.max(15, fontSize - 1))}>A−</button>
@@ -2255,7 +2335,7 @@ function Reader({
       </div>
 
       <article
-        className="page"
+        className={'page' + (readingMode === 'paged' ? ' is-paged' : '')}
         style={{ fontSize: fontSize + 'px', fontFamily: fontStack(fontFamily) }}
         ref={pageRef}
         onScroll={handleScroll}

@@ -43,6 +43,7 @@ export type Settings = {
   fontFamily?: FontFamily
   /** M3：正文人物标记的总开关，默认开 */
   characterMark?: boolean
+  readingMode?: 'scroll' | 'paged'
   /** M5：WebDAV 同步配置 */
   sync?: SyncConfig
 }

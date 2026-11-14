@@ -60,6 +60,8 @@ type EpubReaderProps = {
   onMakeCharacter: (name: string) => void
   onAiCharacters: (list: AiCharacter[], kind: 'character' | 'place') => void
   onOpenMap: () => void
+  readingMode: 'scroll' | 'paged'
+  onOpenSheet: () => void
 }
 
 function flattenToc(items: NavItem[], level = 0): TocRow[] {
@@ -190,6 +192,16 @@ export default function EpubReader(props: EpubReaderProps) {
   const [atEnd, setAtEnd] = useState(false)
   const [toolbar, setToolbar] = useState<ToolbarState | null>(null)
   const [editor, setEditor] = useState<EditorState | null>(null)
+
+  useEffect(() => {
+    const rendition = renditionRef.current
+    if (!rendition) return
+    try {
+      rendition.flow(props.readingMode === 'paged' ? 'paginated' : 'scrolled-doc')
+    } catch {
+      /* 切换失败保持原模式 */
+    }
+  }, [props.readingMode])
 
   useEffect(() => {
     const onBack = (event: Event) => {
@@ -383,7 +395,7 @@ export default function EpubReader(props: EpubReaderProps) {
       const rendition = epubBook.renderTo(element, {
         width: '100%',
         height: '100%',
-        flow: 'scrolled-doc',
+        flow: propsRef.current.readingMode === 'paged' ? 'paginated' : 'scrolled-doc',
         allowScriptedContent: false,
       })
       renditionRef.current = rendition
@@ -934,6 +946,7 @@ export default function EpubReader(props: EpubReaderProps) {
           {aiBusy ? 'AI…' : 'AI 地名'}
         </button>
         <button className="toc-btn" onClick={props.onOpenMap}>地图</button>
+        <button className="toc-btn sheet-trigger" onClick={props.onOpenSheet}>Aa</button>
         <div className="reader-progress"><span style={{ width: percent + '%' }} /></div>
         <div className="tools">
           <button onClick={() => setFontSize(Math.max(15, fontSize - 1))}>A−</button>

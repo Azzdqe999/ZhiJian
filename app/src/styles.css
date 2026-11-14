@@ -1485,3 +1485,62 @@ input { font-family: inherit; }
 @media (max-width: 760px) {
   .app.has-update .main { padding-top: 74px; }
 }
+
+.page.is-paged {
+  column-width: 660px;
+  column-gap: 40px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth;
+}
+.page.is-paged::-webkit-scrollbar { width: 0; height: 0; }
+.page.is-paged > * { break-inside: avoid; }
+@media (max-width: 760px) {
+  .page.is-paged { column-width: calc(100vw - 32px); column-gap: 32px; }
+  .reader-top .tools { display: none; }
+}
+
+/* ---------- 阅读设置浮层 ---------- */
+.reader-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(24, 20, 15, 0.45);
+}
+.reader-sheet {
+  width: min(720px, 100%);
+  padding: 8px 22px calc(18px + env(safe-area-inset-bottom));
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: 20px 20px 0 0;
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 0 -18px 44px rgba(40, 28, 12, 0.18);
+  animation: sheet-up 0.18s ease-out;
+}
+@keyframes sheet-up { from { transform: translateY(30px); opacity: 0.6; } to { transform: translateY(0); opacity: 1; } }
+.reader-sheet-handle { width: 38px; height: 4px; margin: 4px auto 14px; border-radius: 4px; background: var(--line); }
+.reader-sheet-row { display: flex; align-items: center; gap: 16px; padding: 11px 0; border-bottom: 1px solid var(--line); }
+.reader-sheet-label { flex: 0 0 72px; font-size: 12px; color: var(--muted); }
+.reader-sheet-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sheet-btn { min-width: 42px; height: 32px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--ink); font-size: 13px; }
+.sheet-value { min-width: 42px; text-align: center; font-size: 12px; color: var(--muted); }
+.sheet-chip { padding: 6px 12px; border: 1px solid var(--line); border-radius: 16px; background: transparent; color: var(--ink); font-size: 12px; }
+.sheet-chip.is-on { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.reader-sheet-close { width: 100%; margin-top: 16px; padding: 11px; border: 0; border-radius: 10px; background: var(--accent); color: #fff; font-size: 13px; }
+
+.page.is-paged {
+  column-width: var(--page-width, 720px);
+  column-gap: 0;
+  padding-left: 0;
+  padding-right: 0;
+  scroll-snap-type: none;
+}
+.page.is-paged > * { padding-left: 18px; padding-right: 18px; }
+@media (max-width: 760px) {
+  .page.is-paged > * { padding-left: 16px; padding-right: 16px; }
+}

@@ -287,6 +287,7 @@ export type SyncResult = {
   images: number
   uploaded: number
   downloaded: number
+  skipped: number
   remotes: number
   registry: string[]
   at: number
@@ -331,8 +332,14 @@ export async function syncNow(): Promise<SyncResult> {
 
   let uploaded = 0
   let downloaded = 0
+  let skipped = 0
+  const MAX_BOOK_BYTES = 50 * 1024 * 1024
 
   for (const book of merged.books) {
+    if ((book.byteSize || 0) > MAX_BOOK_BYTES) {
+      skipped += 1
+      continue
+    }
     const name = PREFIX + 'book-' + book.id + '.b64'
     const localBytes = await getFile(book.id)
     if (localBytes) {
@@ -409,6 +416,7 @@ export async function syncNow(): Promise<SyncResult> {
     images: merged.images.length,
     uploaded,
     downloaded,
+    skipped,
     remotes: remotes.length,
     registry,
     at,

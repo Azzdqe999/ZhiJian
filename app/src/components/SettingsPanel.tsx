@@ -21,6 +21,7 @@ type Props = {
   imageCount: number
   bookCount: number
   onToast?: (text: string) => void
+  onSynced?: () => void | Promise<void>
 }
 
 const EMPTY_SYNC: SyncConfig = {
@@ -125,9 +126,10 @@ export default function SettingsPanel(props: Props) {
       const fixed = await persist()
       await testConnection(fixed)
       const result = await syncNow()
-      setStatus('同步完成：' + result.books + ' 本书 · ' + result.notes + ' 条笔记 · ' + result.characters + ' 位人物')
+      const skipped = result.skipped ? ' · 跳过 ' + result.skipped + ' 个超大文件' : ''
+      setStatus('同步完成：' + result.books + ' 本书 · ' + result.notes + ' 条笔记 · ' + result.characters + ' 位人物' + skipped)
       props.onToast?.('同步完成')
-      window.setTimeout(() => window.location.reload(), 900)
+      await props.onSynced?.()
     } catch (error) {
       setStatus('同步失败：' + message(error))
     } finally {
