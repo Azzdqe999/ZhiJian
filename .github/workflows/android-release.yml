@@ -54,7 +54,9 @@ jobs:
 
       - name: Install dependencies
         working-directory: app
-        run: pnpm install --frozen-lockfile
+        env:
+          CI: 'true'
+        run: pnpm install --no-frozen-lockfile --ignore-scripts
 
       - name: Build web bundle
         working-directory: app
