@@ -70,6 +70,13 @@ export default function ReaderSheet({
           </div>
         </div>
         <div className="reader-sheet-row">
+          <span className="reader-sheet-label">AI 抽取</span>
+          <div className="reader-sheet-controls">
+            <button className="sheet-chip" onClick={() => window.dispatchEvent(new CustomEvent('paper:ai', { detail: { kind: 'character' } }))}>人物</button>
+            <button className="sheet-chip" onClick={() => window.dispatchEvent(new CustomEvent('paper:ai', { detail: { kind: 'place' } }))}>地名</button>
+          </div>
+        </div>
+        <div className="reader-sheet-row">
           <span className="reader-sheet-label">正文标记</span>
           <div className="reader-sheet-controls">
             <button className={'sheet-chip' + (markEnabled ? ' is-on' : '')} onClick={onToggleMark}>

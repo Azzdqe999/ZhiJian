@@ -1618,3 +1618,20 @@ input { font-family: inherit; }
   .reader.is-paged-reader::after { width: 0; }
 }
 .page.is-paged .page-flow { height: calc(100% - 22px); }
+
+.page.is-paged {
+  column-width: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 62px 30px 110px;
+  clip-path: inset(0);
+}
+.page.is-paged .page-flow { column-width: auto; height: auto; transform: none !important; width: 100%; }
+.page.is-paged .page-flow > * { padding-left: 0; padding-right: 0; }
+@media (max-width: 760px) {
+  .page.is-paged { padding: 24px 16px calc(72px + env(safe-area-inset-bottom)); }
+}
+.sheet-trigger { display: inline-flex; align-items: center; justify-content: center; }
+@media (max-width: 760px) { .sheet-trigger { display: none; } }
+.ai-action { display: none !important; }
+.page.is-paged { clip-path: none; contain: none; }

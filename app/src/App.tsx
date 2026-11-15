@@ -241,6 +241,17 @@ function App() {
   }, [readerSheetOpen, collectionDialog, mapBookId, editorTarget, profileId, detailId, mergePrompt, readingId, nav])
 
   useEffect(() => {
+    const onAi = (event: Event) => {
+      const kind = (event as CustomEvent<{ kind?: string }>).detail?.kind
+      const buttons = document.querySelectorAll<HTMLButtonElement>('.ai-action')
+      const button = buttons[kind === 'place' ? 1 : 0]
+      button?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    }
+    window.addEventListener('paper:ai', onAi)
+    return () => window.removeEventListener('paper:ai', onAi)
+  }, [])
+
+  useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key === ',') {
         if (!readingId) return
@@ -2224,13 +2235,8 @@ function Reader({
 
   const turnPage = useCallback((direction: number) => {
     const page = pageRef.current
-    const flow = flowRef.current
-    if (!page || !flow) return
-    const width = page.clientWidth
-    const total = Math.max(1, Math.ceil(flow.scrollWidth / Math.max(1, width)))
-    setPageCount(total)
-    setPageWidth(width)
-    setPageIndex((value) => Math.max(0, Math.min(total - 1, value + direction)))
+    if (!page) return
+    page.scrollBy({ top: direction * Math.max(200, page.clientHeight - 48), behavior: 'smooth' })
   }, [])
 
   useEffect(() => {
@@ -2252,7 +2258,6 @@ function Reader({
   }, [readingMode, turnPage])
 
   const handleScroll = useCallback(() => {
-    if (readingMode === 'paged') return
     const element = pageRef.current
     if (!element) return
     const max = Math.max(0, element.scrollHeight - element.clientHeight)
@@ -2363,12 +2368,15 @@ function Reader({
         ref={pageRef}
         onScroll={handleScroll}
         onMouseUp={captureSelection}
+        onClick={(event) => {
+          if (window.innerWidth > 760) return
+          if (window.getSelection()?.toString().trim()) return
+          const target = event.target as HTMLElement
+          if (target.closest('a,button,.char,.txt-toolbar')) return
+          onOpenSheet()
+        }}
       >
-        <div
-          className="page-flow"
-          ref={flowRef}
-          style={readingMode === 'paged' ? { transform: 'translateX(-' + pageIndex * pageWidth + 'px)' } : undefined}
-        >
+        <div className="page-flow" ref={flowRef}>
         <div className="reader-head">
           <div className="book-name">{book.title}</div>
           <h2>{chapter ? chapter.title : loading ? '……' : '正文'}</h2>

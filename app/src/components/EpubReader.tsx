@@ -194,16 +194,6 @@ export default function EpubReader(props: EpubReaderProps) {
   const [editor, setEditor] = useState<EditorState | null>(null)
 
   useEffect(() => {
-    const rendition = renditionRef.current
-    if (!rendition) return
-    try {
-      rendition.flow(props.readingMode === 'paged' ? 'paginated' : 'scrolled-doc')
-    } catch {
-      /* 切换失败保持原模式 */
-    }
-  }, [props.readingMode])
-
-  useEffect(() => {
     const onBack = (event: Event) => {
       if (zoomImage) { setZoomImage(null); event.preventDefault(); return }
       if (editor) { setEditor(null); event.preventDefault(); return }
@@ -461,6 +451,14 @@ export default function EpubReader(props: EpubReaderProps) {
               const current = doc.getSelection()
               if (!current || current.isCollapsed || !current.toString().trim()) setToolbar(null)
             })
+            doc.addEventListener('click', (event) => {
+              if (window.innerWidth > 760) return
+              const current = doc.getSelection()
+              if (current && !current.isCollapsed && current.toString().trim()) return
+              const target = event.target as HTMLElement
+              if (target.closest('a,button')) return
+              propsRef.current.onOpenSheet()
+            })
           }
         } catch {
           /* 选区监听失败不影响阅读 */
@@ -511,13 +509,6 @@ export default function EpubReader(props: EpubReaderProps) {
         }
       } else {
         await rendition.display()
-      }
-      if (!disposed && propsRef.current.readingMode === 'paged') {
-        try {
-          rendition.flow('paginated')
-        } catch {
-          /* 翻页失败时保持滚动 */
-        }
       }
       if (!disposed) setStatus('ready')
     }
@@ -1093,8 +1084,16 @@ export default function EpubReader(props: EpubReaderProps) {
 
       {props.readingMode === 'paged' ? (
         <>
-          <button className="page-turn prev" onClick={() => void renditionRef.current?.prev()} title="上一页">‹</button>
-          <button className="page-turn next" onClick={() => void renditionRef.current?.next()} title="下一页">›</button>
+          <button className="page-turn prev" onClick={() => {
+            const rendition = renditionRef.current
+            const win = rendition ? firstContents(rendition)?.window : null
+            win?.scrollBy({ top: -Math.max(200, win.innerHeight - 48), behavior: 'smooth' })
+          }} title="上一页">‹</button>
+          <button className="page-turn next" onClick={() => {
+            const rendition = renditionRef.current
+            const win = rendition ? firstContents(rendition)?.window : null
+            win?.scrollBy({ top: Math.max(200, win.innerHeight - 48), behavior: 'smooth' })
+          }} title="下一页">›</button>
         </>
       ) : null}
 
