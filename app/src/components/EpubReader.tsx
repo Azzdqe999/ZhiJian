@@ -395,7 +395,7 @@ export default function EpubReader(props: EpubReaderProps) {
       const rendition = epubBook.renderTo(element, {
         width: '100%',
         height: '100%',
-        flow: propsRef.current.readingMode === 'paged' ? 'paginated' : 'scrolled-doc',
+        flow: 'scrolled-doc',
         allowScriptedContent: false,
       })
       renditionRef.current = rendition
@@ -499,7 +499,26 @@ export default function EpubReader(props: EpubReaderProps) {
         }
       })
 
-      await rendition.display(initialStartRef.current || undefined)
+      const startCfi = initialStartRef.current
+      if (startCfi) {
+        try {
+          await Promise.race([
+            rendition.display(startCfi),
+            new Promise((_, reject) => window.setTimeout(() => reject(new Error('cfi timeout')), 2200)),
+          ])
+        } catch {
+          await rendition.display()
+        }
+      } else {
+        await rendition.display()
+      }
+      if (!disposed && propsRef.current.readingMode === 'paged') {
+        try {
+          rendition.flow('paginated')
+        } catch {
+          /* 翻页失败时保持滚动 */
+        }
+      }
       if (!disposed) setStatus('ready')
     }
 
@@ -1078,6 +1097,13 @@ export default function EpubReader(props: EpubReaderProps) {
           onClose={() => setEditor(null)}
         />
       )}
+
+      {props.readingMode === 'paged' ? (
+        <>
+          <button className="page-turn prev" onClick={() => void renditionRef.current?.prev()} title="上一页">‹</button>
+          <button className="page-turn next" onClick={() => void renditionRef.current?.next()} title="下一页">›</button>
+        </>
+      ) : null}
 
       {zoomImage && (
         <div className="image-zoom" onClick={() => setZoomImage(null)}>

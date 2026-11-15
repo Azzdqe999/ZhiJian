@@ -2025,6 +2025,10 @@ function Reader({
   const [aiBusy, setAiBusy] = useState(false)
 
   const pageRef = useRef<HTMLElement | null>(null)
+  const flowRef = useRef<HTMLDivElement | null>(null)
+  const [pageIndex, setPageIndex] = useState(0)
+  const [pageWidth, setPageWidth] = useState(720)
+  const [pageCount, setPageCount] = useState(1)
   const jumpSeen = useRef<number>(-1)
   const indexRef = useRef(index)
   const ratioRef = useRef(ratio)
@@ -2188,36 +2192,59 @@ function Reader({
   useEffect(() => {
     const element = pageRef.current
     if (!element) return
-    const apply = () => {
-      if (readingMode === 'paged') element.style.setProperty('--page-width', element.clientWidth + 'px')
-      else element.style.removeProperty('--page-width')
+    if (readingMode !== 'paged') {
+      setPageIndex(0)
+      const max = Math.max(0, element.scrollHeight - element.clientHeight)
+      element.scrollTop = ratioRef.current * max
+      return
     }
-    apply()
-    window.addEventListener('resize', apply)
     window.requestAnimationFrame(() => {
-      const paged = readingMode === 'paged'
-      const max = Math.max(0, paged ? element.scrollWidth - element.clientWidth : element.scrollHeight - element.clientHeight)
-      if (max <= 0) return
-      if (paged) element.scrollLeft = ratioRef.current * max
-      else element.scrollTop = ratioRef.current * max
+      const flow = flowRef.current
+      if (!flow) return
+      const width = element.clientWidth
+      flow.style.setProperty('--page-width', width + 'px')
+      setPageWidth(width)
+      const total = Math.max(1, Math.ceil(flow.scrollWidth / Math.max(1, width)))
+      setPageCount(total)
+      setPageIndex(Math.round(ratioRef.current * Math.max(0, total - 1)))
     })
-    return () => window.removeEventListener('resize', apply)
-  }, [readingMode])
+  }, [readingMode, chapter, fontSize, fontFamily, book.id, index])
+
+  const turnPage = useCallback((direction: number) => {
+    const page = pageRef.current
+    const flow = flowRef.current
+    if (!page || !flow) return
+    const width = page.clientWidth
+    const total = Math.max(1, Math.ceil(flow.scrollWidth / Math.max(1, width)))
+    setPageCount(total)
+    setPageWidth(width)
+    setPageIndex((value) => Math.max(0, Math.min(total - 1, value + direction)))
+  }, [])
+
+  useEffect(() => {
+    if (readingMode !== 'paged' || pageCount <= 1) return
+    const value = pageIndex / (pageCount - 1)
+    ratioRef.current = value
+    setRatio(value)
+    onProgress(book.id, indexRef.current, value)
+  }, [pageIndex, pageCount, readingMode, book.id, onProgress])
+
+  useEffect(() => {
+    if (readingMode !== 'paged') return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'ArrowRight') { event.preventDefault(); turnPage(1) }
+      if (event.key === 'ArrowLeft') { event.preventDefault(); turnPage(-1) }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [readingMode, turnPage])
 
   const handleScroll = useCallback(() => {
+    if (readingMode === 'paged') return
     const element = pageRef.current
     if (!element) return
-    const paged = readingMode === 'paged'
-    const max = Math.max(0, paged ? element.scrollWidth - element.clientWidth : element.scrollHeight - element.clientHeight)
-    const position = paged ? element.scrollLeft : element.scrollTop
-    if (paged) {
-      if (snapTimer.current) window.clearTimeout(snapTimer.current)
-      snapTimer.current = window.setTimeout(() => {
-        const width = element.clientWidth
-        if (width > 0) element.scrollLeft = Math.round(element.scrollLeft / width) * width
-      }, 140)
-    }
-    const value = max > 60 ? Math.min(1, Math.max(0, position / max)) : 0
+    const max = Math.max(0, element.scrollHeight - element.clientHeight)
+    const value = max > 60 ? Math.min(1, Math.max(0, element.scrollTop / max)) : 0
     ratioRef.current = value
     setSelection(null)
     onCharacterLeave()
@@ -2341,6 +2368,11 @@ function Reader({
         onScroll={handleScroll}
         onMouseUp={captureSelection}
       >
+        <div
+          className="page-flow"
+          ref={flowRef}
+          style={readingMode === 'paged' ? { transform: 'translateX(-' + pageIndex * pageWidth + 'px)' } : undefined}
+        >
         <div className="reader-head">
           <div className="book-name">{book.title}</div>
           <h2>{chapter ? chapter.title : loading ? '……' : '正文'}</h2>
@@ -2381,7 +2413,15 @@ function Reader({
             </div>
           </>
         )}
+        </div>
       </article>
+
+      {readingMode === 'paged' ? (
+        <>
+          <button className="page-turn prev" onClick={() => turnPage(-1)} title="上一页">‹</button>
+          <button className="page-turn next" onClick={() => turnPage(1)} title="下一页">›</button>
+        </>
+      ) : null}
 
       {selection && (
         <div

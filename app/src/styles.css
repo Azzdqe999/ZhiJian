@@ -1560,3 +1560,39 @@ input { font-family: inherit; }
   line-height: 1;
 }
 .reader-sheet-x:hover { background: var(--paper2); color: var(--ink); }
+
+.reader { position: relative; }
+.page-turn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 24;
+  width: 34px;
+  height: 64px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  color: var(--muted);
+  font-size: 24px;
+  line-height: 1;
+  backdrop-filter: blur(6px);
+}
+.page-turn:hover { color: var(--accent); border-color: var(--accent); }
+.page-turn.prev { left: 10px; }
+.page-turn.next { right: 10px; }
+@media (max-width: 760px) {
+  .page-turn { width: 26px; height: 52px; font-size: 18px; opacity: 0.55; }
+}
+
+.page.is-paged { column-width: auto; column-gap: 0; padding-left: 0; padding-right: 0; overflow: hidden; }
+.page.is-paged .page-flow {
+  column-width: var(--page-width, 720px);
+  column-gap: 0;
+  height: 100%;
+  transition: transform 0.16s ease;
+  will-change: transform;
+}
+.page.is-paged .page-flow > * { padding-left: 18px; padding-right: 18px; break-inside: avoid; }
+@media (max-width: 760px) {
+  .page.is-paged .page-flow > * { padding-left: 16px; padding-right: 16px; }
+}
