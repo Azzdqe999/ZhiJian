@@ -241,6 +241,18 @@ function App() {
   }, [readerSheetOpen, collectionDialog, mapBookId, editorTarget, profileId, detailId, mergePrompt, readingId, nav])
 
   useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key === ',') {
+        if (!readingId) return
+        event.preventDefault()
+        setReaderSheetOpen(true)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [readingId])
+
+  useEffect(() => {
     if (!Capacitor.isNativePlatform()) return
     let remove: (() => void) | undefined
     void CapacitorApp.addListener('backButton', () => handleBack()).then((listener) => {
@@ -2258,7 +2270,7 @@ function Reader({
 
   return (
     <main
-      className="main reader"
+      className={'main reader' + (readingMode === 'paged' ? ' is-paged-reader' : '')}
       onMouseDown={(event) => {
         if (!(event.target as HTMLElement).closest('.txt-toolbar')) setSelection(null)
       }}

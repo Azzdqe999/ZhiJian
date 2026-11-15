@@ -1596,3 +1596,25 @@ input { font-family: inherit; }
 @media (max-width: 760px) {
   .page.is-paged .page-flow > * { padding-left: 16px; padding-right: 16px; }
 }
+
+.page.is-paged { clip-path: inset(0); contain: paint; }
+.page.is-paged .page-flow { width: 100%; }
+
+.reader.is-paged-reader::before,
+.reader.is-paged-reader::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: max(0px, calc((100% - 720px) / 2));
+  background: var(--paper);
+  z-index: 6;
+  pointer-events: none;
+}
+.reader.is-paged-reader::before { left: 0; }
+.reader.is-paged-reader::after { right: 0; }
+@media (max-width: 760px) {
+  .reader.is-paged-reader::before,
+  .reader.is-paged-reader::after { width: 0; }
+}
+.page.is-paged .page-flow { height: calc(100% - 22px); }
