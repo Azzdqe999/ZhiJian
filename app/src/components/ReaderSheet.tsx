@@ -29,8 +29,9 @@ export default function ReaderSheet({
   onClose,
 }: Props) {
   return (
-    <div className="reader-sheet-backdrop" onClick={onClose}>
+    <div className="reader-sheet-backdrop">
       <div className="reader-sheet" onClick={(event) => event.stopPropagation()}>
+        <button className="reader-sheet-x" onClick={onClose} title="关闭">×</button>
         <div className="reader-sheet-handle" />
         <div className="reader-sheet-row">
           <span className="reader-sheet-label">字号</span>
