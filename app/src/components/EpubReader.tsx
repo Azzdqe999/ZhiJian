@@ -965,17 +965,10 @@ export default function EpubReader(props: EpubReaderProps) {
           {aiBusy ? 'AI…' : 'AI 地名'}
         </button>
         <button className="toc-btn" onClick={props.onOpenMap}>地图</button>
-        <button className="toc-btn sheet-trigger" onClick={props.onOpenSheet}>Aa</button>
+        <button className="toc-btn sheet-trigger" onClick={props.onOpenSheet} title="阅读设置" aria-label="阅读设置">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        </button>
         <div className="reader-progress"><span style={{ width: percent + '%' }} /></div>
-        <div className="tools">
-          <button onClick={() => setFontSize(Math.max(15, fontSize - 1))}>A−</button>
-          <span className="size">{fontSize}</span>
-          <button onClick={() => setFontSize(Math.min(30, fontSize + 1))}>A+</button>
-          <button className="font-btn" onClick={cycleFont} title="切换字体">{fontOption.label}</button>
-          <button className="theme-btn" onClick={() => setTheme(theme === 'paper' ? 'night' : 'paper')}>
-            {theme === 'paper' ? '夜' : '日'}
-          </button>
-        </div>
       </div>
 
       <div className={'epub-stage' + (theme === 'night' ? ' is-night' : '')}>
