@@ -194,6 +194,16 @@ export default function EpubReader(props: EpubReaderProps) {
   const [editor, setEditor] = useState<EditorState | null>(null)
 
   useEffect(() => {
+    const rendition = renditionRef.current
+    if (!rendition || status !== 'ready') return
+    try {
+      rendition.flow(props.readingMode === 'paged' ? 'paginated' : 'scrolled-doc')
+    } catch {
+      /* 切换失败保持当前模式 */
+    }
+  }, [props.readingMode, status])
+
+  useEffect(() => {
     const onBack = (event: Event) => {
       if (zoomImage) { setZoomImage(null); event.preventDefault(); return }
       if (editor) { setEditor(null); event.preventDefault(); return }
@@ -385,10 +395,11 @@ export default function EpubReader(props: EpubReaderProps) {
       const rendition = epubBook.renderTo(element, {
         width: '100%',
         height: '100%',
-        flow: 'scrolled-doc',
+        flow: propsRef.current.readingMode === 'paged' ? 'paginated' : 'scrolled-doc',
         allowScriptedContent: false,
       })
       renditionRef.current = rendition
+      ;(window as unknown as { __rendition?: unknown }).__rendition = rendition
       styleStateRef.current = {
         theme: propsRef.current.theme,
         fontSize: propsRef.current.fontSize,
@@ -498,19 +509,21 @@ export default function EpubReader(props: EpubReaderProps) {
       })
 
       const startCfi = initialStartRef.current
-      if (startCfi) {
-        try {
-          await Promise.race([
-            rendition.display(startCfi),
-            new Promise((_, reject) => window.setTimeout(() => reject(new Error('cfi timeout')), 2200)),
-          ])
-        } catch {
-          await rendition.display()
-        }
+      if (propsRef.current.readingMode === 'paged' && book.chapterIndex > 0) {
+        const section = epubBook.spine.get(Math.min(book.chapterIndex, count - 1))
+        await rendition.display(section?.href || undefined)
       } else {
         await rendition.display()
       }
       if (!disposed) setStatus('ready')
+      if (startCfi && propsRef.current.readingMode !== 'paged') {
+        window.setTimeout(() => {
+          if (disposed) return
+          rendition.display(startCfi).catch(() => {
+            /* 旧位置失效时保持本章开头 */
+          })
+        }, 80)
+      }
     }
 
     const bindScroll = (contents: Contents) => {
@@ -1084,16 +1097,8 @@ export default function EpubReader(props: EpubReaderProps) {
 
       {props.readingMode === 'paged' ? (
         <>
-          <button className="page-turn prev" onClick={() => {
-            const rendition = renditionRef.current
-            const win = rendition ? firstContents(rendition)?.window : null
-            win?.scrollBy({ top: -Math.max(200, win.innerHeight - 48), behavior: 'smooth' })
-          }} title="上一页">‹</button>
-          <button className="page-turn next" onClick={() => {
-            const rendition = renditionRef.current
-            const win = rendition ? firstContents(rendition)?.window : null
-            win?.scrollBy({ top: Math.max(200, win.innerHeight - 48), behavior: 'smooth' })
-          }} title="下一页">›</button>
+          <button className="page-turn prev" onClick={() => void renditionRef.current?.prev()} title="上一页">‹</button>
+          <button className="page-turn next" onClick={() => void renditionRef.current?.next()} title="下一页">›</button>
         </>
       ) : null}
 

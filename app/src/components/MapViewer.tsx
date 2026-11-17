@@ -32,6 +32,12 @@ export default function MapViewer({ bookId, bookTitle, places, onOpenPlace, onCl
   const [pinPlaceId, setPinPlaceId] = useState('')
   const inputRef = useRef<HTMLInputElement | null>(null)
   const canvasRef = useRef<HTMLDivElement | null>(null)
+  const longPressRef = useRef<number | null>(null)
+  const pinchRef = useRef<{ distance: number; zoom: number } | null>(null)
+  const touchDistance = (touches: ArrayLike<{ clientX: number; clientY: number }>) => {
+    if (touches.length < 2) return 0
+    return Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY)
+  }
 
   const current = maps[index]
   const url = useObjectUrl(current?.blob ?? null)
@@ -120,15 +126,7 @@ export default function MapViewer({ bookId, bookTitle, places, onOpenPlace, onCl
             <div className="map-title">世界观地图</div>
             <div className="map-sub">《{bookTitle}》 · {maps.length} 张图 · {pins.length} 个标记</div>
           </div>
-          <div className="map-actions">
-            <button className="btn small" onClick={() => inputRef.current?.click()}>上传地图</button>
-            <button className="btn small" onClick={() => setZoom((value) => Math.max(0.5, value - 0.2))}>−</button>
-            <span className="setting-value">{Math.round(zoom * 100)}%</span>
-            <button className="btn small" onClick={() => setZoom((value) => Math.min(4, value + 0.2))}>+</button>
-            <button className="btn small" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }) }}>1:1</button>
-            {current ? <button className="btn small" onClick={() => void removeCurrent()}>删除这张</button> : null}
-            <button className="btn small" onClick={onClose}>关闭</button>
-          </div>
+          <button className="map-close" onClick={onClose} aria-label="关闭地图">×</button>
         </header>
 
         <div className="map-body">
@@ -161,6 +159,24 @@ export default function MapViewer({ bookId, bookTitle, places, onOpenPlace, onCl
             }}
             onPointerUp={() => { dragRef.current = null }}
             onPointerCancel={() => { dragRef.current = null }}
+            onTouchStart={(event) => {
+              if (event.touches.length === 2) {
+                dragRef.current = null
+                pinchRef.current = { distance: touchDistance(event.touches), zoom }
+              }
+            }}
+            onTouchMove={(event) => {
+              const pinch = pinchRef.current
+              if (!pinch || event.touches.length !== 2) return
+              event.preventDefault()
+              const next = pinch.zoom * (touchDistance(event.touches) / Math.max(1, pinch.distance))
+              setZoom(Math.max(0.5, Math.min(4, next)))
+            }}
+            onTouchEnd={() => { pinchRef.current = null }}
+            onWheel={(event) => {
+              event.preventDefault()
+              setZoom((value) => Math.max(0.5, Math.min(4, value - Math.sign(event.deltaY) * 0.12)))
+            }}
           >
             {url ? (
               <div className="map-canvas" ref={canvasRef} style={{ transform: 'translate(' + pan.x + 'px, ' + pan.y + 'px) scale(' + zoom + ')' }}>
@@ -181,6 +197,12 @@ export default function MapViewer({ bookId, bookTitle, places, onOpenPlace, onCl
                       event.stopPropagation()
                       pinDragRef.current = { id: pin.id, x: pin.x, y: pin.y }
                       suppressPinClick.current = false
+                      if (longPressRef.current) window.clearTimeout(longPressRef.current)
+                      longPressRef.current = window.setTimeout(() => {
+                        longPressRef.current = null
+                        suppressPinClick.current = true
+                        if (window.confirm('删除「' + pin.label + '」这个标记？')) void removePin(pin)
+                      }, 550)
                       try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* synthetic */ }
                     }}
                     onPointerMove={(event) => {
@@ -190,12 +212,16 @@ export default function MapViewer({ bookId, bookTitle, places, onOpenPlace, onCl
                       if (!rect) return
                       const x = Math.max(0, Math.min(100, ((event.clientX - rect.left) / rect.width) * 100))
                       const y = Math.max(0, Math.min(100, ((event.clientY - rect.top) / rect.height) * 100))
-                      if (Math.abs(x - drag.x) > 0.4 || Math.abs(y - drag.y) > 0.4) suppressPinClick.current = true
+                      if (Math.abs(x - drag.x) > 0.4 || Math.abs(y - drag.y) > 0.4) {
+                        suppressPinClick.current = true
+                        if (longPressRef.current) { window.clearTimeout(longPressRef.current); longPressRef.current = null }
+                      }
                       drag.x = x
                       drag.y = y
                       setPins((value) => value.map((item) => (item.id === drag.id ? { ...item, x, y } : item)))
                     }}
                     onPointerUp={() => {
+                      if (longPressRef.current) { window.clearTimeout(longPressRef.current); longPressRef.current = null }
                       const drag = pinDragRef.current
                       pinDragRef.current = null
                       if (!drag) return
@@ -217,6 +243,15 @@ export default function MapViewer({ bookId, bookTitle, places, onOpenPlace, onCl
               </div>
             )}
           </div>
+        </div>
+
+        <div className="map-tools">
+          <button className="map-tool" onClick={() => inputRef.current?.click()}>上传地图</button>
+          <button className="map-tool" onClick={() => setZoom((value) => Math.max(0.5, value - 0.2))}>−</button>
+          <span className="map-zoom">{Math.round(zoom * 100)}%</span>
+          <button className="map-tool" onClick={() => setZoom((value) => Math.min(4, value + 0.2))}>+</button>
+          <button className="map-tool" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }) }}>1:1</button>
+          {current ? <button className="map-tool danger" onClick={() => void removeCurrent()}>删除这张</button> : null}
         </div>
 
         {maps.length ? (

@@ -1652,3 +1652,75 @@ input { font-family: inherit; }
   .page.is-paged .page-flow > * { padding-left: 16px; padding-right: 16px; }
 }
 .page.is-paged .page-flow { display: block; width: 100%; }
+
+/* ---------- 地图工具条 / 手机适配 ---------- */
+.map-close {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+}
+.map-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line);
+  overflow-x: auto;
+}
+.map-tool {
+  flex: 0 0 auto;
+  padding: 6px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 12px;
+}
+.map-tool.danger { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.map-zoom { min-width: 44px; text-align: center; font-size: 11px; color: var(--muted); }
+
+@media (max-width: 760px) {
+  .map-overlay { padding: 0; }
+  .map-panel { width: 100%; height: 100dvh; border: 0; border-radius: 0; }
+  .map-head { padding: calc(10px + env(safe-area-inset-top)) 14px 10px; flex-wrap: nowrap; gap: 8px; }
+  .map-title { font-size: 16px; }
+  .map-sub { font-size: 10px; }
+  .map-close { flex: 0 0 32px; width: 32px; height: 32px; }
+  .map-body { flex-direction: column; }
+  .map-places {
+    width: 100%;
+    flex: 0 0 auto;
+    max-height: 58px;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    scrollbar-width: none;
+  }
+  .map-places::-webkit-scrollbar { display: none; }
+  .map-places-title { display: none; }
+  .map-place {
+    flex: 0 0 auto;
+    padding: 6px 10px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .map-stage { padding: 6px; overflow: hidden; touch-action: none; }
+  .map-canvas img { max-width: calc(100vw - 12px); max-height: calc(100dvh - 250px); width: auto; height: auto; }
+  .map-pin { width: 34px; height: 34px; font-size: 13px; line-height: 30px; }
+  .map-tools { padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); gap: 6px; }
+  .map-tool { padding: 7px 10px; font-size: 11px; white-space: nowrap; }
+  .map-strip { padding: 8px 12px; gap: 6px; }
+  .map-thumb { width: 54px; height: 40px; }
+}

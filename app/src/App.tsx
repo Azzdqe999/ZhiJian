@@ -1396,7 +1396,7 @@ function App() {
       {reading ? (
         isEpubBook(reading) ? (
           <EpubReader
-            key={reading.id}
+            key={reading.id + ':' + readingMode}
             book={reading}
             notes={notes}
             fontSize={fontSize}
