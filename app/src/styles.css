@@ -1727,3 +1727,4 @@ input { font-family: inherit; }
 
 .epub-stage.is-paged iframe { width: 100% !important; height: 100% !important; }
 .epub-stage.is-paged .epub-view { height: 100% !important; }
+@media (max-width: 760px) { .page-turn { display: none !important; } }

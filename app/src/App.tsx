@@ -2372,6 +2372,10 @@ function Reader({
           if (window.getSelection()?.toString().trim()) return
           const target = event.target as HTMLElement
           if (target.closest('a,button,.char,.txt-toolbar')) return
+          const rect = event.currentTarget.getBoundingClientRect()
+          const x = event.clientX - rect.left
+          if (x < rect.width * 0.3) { turnPage(-1); return }
+          if (x > rect.width * 0.7) { turnPage(1); return }
           onOpenSheet()
         }}
       >

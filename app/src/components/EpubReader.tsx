@@ -73,6 +73,22 @@ function flattenToc(items: NavItem[], level = 0): TocRow[] {
   return rows
 }
 
+function scrollEpubPage(rendition: Rendition | null, direction: number) {
+  if (!rendition) return
+  const win = firstContents(rendition)?.window
+  if (!win) return
+  const doc = win.document
+  if (direction > 0 && win.scrollY + win.innerHeight >= doc.body.scrollHeight - 8) {
+    void rendition.next()
+    return
+  }
+  if (direction < 0 && win.scrollY <= 4) {
+    void rendition.prev()
+    return
+  }
+  win.scrollTo(0, Math.max(0, win.scrollY + direction * (win.innerHeight - 40)))
+}
+
 function firstContents(rendition: Rendition): Contents | null {
   const value = rendition.getContents() as unknown
   if (Array.isArray(value)) return (value[0] as Contents) ?? null
@@ -457,6 +473,10 @@ export default function EpubReader(props: EpubReaderProps) {
               if (current && !current.isCollapsed && current.toString().trim()) return
               const target = event.target as HTMLElement
               if (target.closest('a,button')) return
+              const width = doc.defaultView?.innerWidth || doc.documentElement.clientWidth || 1
+              const x = event.clientX
+              if (x < width * 0.3) { scrollEpubPage(rendition, -1); return }
+              if (x > width * 0.7) { scrollEpubPage(rendition, 1); return }
               propsRef.current.onOpenSheet()
             })
           }
@@ -1081,23 +1101,8 @@ export default function EpubReader(props: EpubReaderProps) {
 
       {props.readingMode === 'paged' ? (
         <>
-          <button className="page-turn prev" onClick={() => {
-            const rendition = renditionRef.current
-            if (!rendition) return
-            const win = firstContents(rendition)?.window
-            if (!win) return
-            if (win.scrollY <= 4) void rendition.prev()
-            else win.scrollTo(0, Math.max(0, win.scrollY - (win.innerHeight - 40)))
-          }} title="上一页">‹</button>
-          <button className="page-turn next" onClick={() => {
-            const rendition = renditionRef.current
-            if (!rendition) return
-            const win = firstContents(rendition)?.window
-            if (!win) return
-            const doc = win.document
-            if (win.scrollY + win.innerHeight >= doc.body.scrollHeight - 8) void rendition.next()
-            else win.scrollTo(0, win.scrollY + win.innerHeight - 40)
-          }} title="下一页">›</button>
+          <button className="page-turn prev" onClick={() => scrollEpubPage(renditionRef.current, -1)} title="上一页">‹</button>
+          <button className="page-turn next" onClick={() => scrollEpubPage(renditionRef.current, 1)} title="下一页">›</button>
         </>
       ) : null}
 
