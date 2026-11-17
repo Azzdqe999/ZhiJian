@@ -2215,37 +2215,34 @@ function Reader({
   useEffect(() => {
     const element = pageRef.current
     if (!element) return
-    if (readingMode !== 'paged') {
-      setPageIndex(0)
-      const max = Math.max(0, element.scrollHeight - element.clientHeight)
-      element.scrollTop = ratioRef.current * max
-      return
+    const apply = () => {
+      if (readingMode === 'paged') {
+        element.style.setProperty('--page-width', element.clientWidth + 'px')
+        const max = Math.max(0, element.scrollWidth - element.clientWidth)
+        element.scrollLeft = ratioRef.current * max
+      } else {
+        element.style.removeProperty('--page-width')
+        const max = Math.max(0, element.scrollHeight - element.clientHeight)
+        element.scrollTop = ratioRef.current * max
+      }
     }
-    window.requestAnimationFrame(() => {
-      const flow = flowRef.current
-      if (!flow) return
-      const width = element.clientWidth
-      flow.style.setProperty('--page-width', width + 'px')
-      setPageWidth(width)
-      const total = Math.max(1, Math.ceil(flow.scrollWidth / Math.max(1, width)))
-      setPageCount(total)
-      setPageIndex(Math.round(ratioRef.current * Math.max(0, total - 1)))
-    })
+    apply()
+    window.addEventListener('resize', apply)
+    return () => window.removeEventListener('resize', apply)
   }, [readingMode, chapter, fontSize, fontFamily, book.id, index])
 
   const turnPage = useCallback((direction: number) => {
     const page = pageRef.current
     if (!page) return
-    page.scrollBy({ top: direction * Math.max(200, page.clientHeight - 48), behavior: 'smooth' })
+    const width = page.clientWidth
+    const index = Math.round(page.scrollLeft / Math.max(1, width))
+    const previous = page.style.scrollBehavior
+    page.style.scrollBehavior = 'auto'
+    page.scrollLeft = (index + direction) * width
+    page.style.scrollBehavior = previous
   }, [])
 
-  useEffect(() => {
-    if (readingMode !== 'paged' || pageCount <= 1) return
-    const value = pageIndex / (pageCount - 1)
-    ratioRef.current = value
-    setRatio(value)
-    onProgress(book.id, indexRef.current, value)
-  }, [pageIndex, pageCount, readingMode, book.id, onProgress])
+
 
   useEffect(() => {
     if (readingMode !== 'paged') return
@@ -2260,8 +2257,10 @@ function Reader({
   const handleScroll = useCallback(() => {
     const element = pageRef.current
     if (!element) return
-    const max = Math.max(0, element.scrollHeight - element.clientHeight)
-    const value = max > 60 ? Math.min(1, Math.max(0, element.scrollTop / max)) : 0
+    const paged = readingMode === 'paged'
+    const max = Math.max(0, paged ? element.scrollWidth - element.clientWidth : element.scrollHeight - element.clientHeight)
+    const position = paged ? element.scrollLeft : element.scrollTop
+    const value = max > 60 ? Math.min(1, Math.max(0, position / max)) : 0
     ratioRef.current = value
     setSelection(null)
     onCharacterLeave()

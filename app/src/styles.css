@@ -1635,3 +1635,20 @@ input { font-family: inherit; }
 @media (max-width: 760px) { .sheet-trigger { display: none; } }
 .ai-action { display: none !important; }
 .page.is-paged { clip-path: none; contain: none; }
+
+.page.is-paged {
+  column-width: var(--page-width, 720px);
+  column-gap: 0;
+  column-fill: auto;
+  padding: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  clip-path: none;
+  contain: none;
+}
+.page.is-paged .page-flow { display: contents; }
+.page.is-paged .page-flow > * { padding-left: 18px; padding-right: 18px; break-inside: avoid; }
+@media (max-width: 760px) {
+  .page.is-paged .page-flow > * { padding-left: 16px; padding-right: 16px; }
+}
+.page.is-paged .page-flow { display: block; width: 100%; }
