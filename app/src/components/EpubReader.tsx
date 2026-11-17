@@ -194,16 +194,6 @@ export default function EpubReader(props: EpubReaderProps) {
   const [editor, setEditor] = useState<EditorState | null>(null)
 
   useEffect(() => {
-    const rendition = renditionRef.current
-    if (!rendition || status !== 'ready') return
-    try {
-      rendition.flow(props.readingMode === 'paged' ? 'paginated' : 'scrolled-doc')
-    } catch {
-      /* 切换失败保持当前模式 */
-    }
-  }, [props.readingMode, status])
-
-  useEffect(() => {
     const onBack = (event: Event) => {
       if (zoomImage) { setZoomImage(null); event.preventDefault(); return }
       if (editor) { setEditor(null); event.preventDefault(); return }
@@ -395,11 +385,10 @@ export default function EpubReader(props: EpubReaderProps) {
       const rendition = epubBook.renderTo(element, {
         width: '100%',
         height: '100%',
-        flow: propsRef.current.readingMode === 'paged' ? 'paginated' : 'scrolled-doc',
+        flow: 'scrolled-doc',
         allowScriptedContent: false,
       })
       renditionRef.current = rendition
-      ;(window as unknown as { __rendition?: unknown }).__rendition = rendition
       styleStateRef.current = {
         theme: propsRef.current.theme,
         fontSize: propsRef.current.fontSize,
@@ -509,14 +498,9 @@ export default function EpubReader(props: EpubReaderProps) {
       })
 
       const startCfi = initialStartRef.current
-      if (propsRef.current.readingMode === 'paged' && book.chapterIndex > 0) {
-        const section = epubBook.spine.get(Math.min(book.chapterIndex, count - 1))
-        await rendition.display(section?.href || undefined)
-      } else {
-        await rendition.display()
-      }
+      await rendition.display()
       if (!disposed) setStatus('ready')
-      if (startCfi && propsRef.current.readingMode !== 'paged') {
+      if (startCfi) {
         window.setTimeout(() => {
           if (disposed) return
           rendition.display(startCfi).catch(() => {
@@ -975,7 +959,7 @@ export default function EpubReader(props: EpubReaderProps) {
         <div className="reader-progress"><span style={{ width: percent + '%' }} /></div>
       </div>
 
-      <div className={'epub-stage' + (theme === 'night' ? ' is-night' : '')}>
+      <div className={'epub-stage' + (theme === 'night' ? ' is-night' : '') + (props.readingMode === 'paged' ? ' is-paged' : '')}>
         <div className="epub-viewer" ref={viewerRef} />
         {status === 'loading' && (
           <div className="stage-veil">
@@ -1097,8 +1081,23 @@ export default function EpubReader(props: EpubReaderProps) {
 
       {props.readingMode === 'paged' ? (
         <>
-          <button className="page-turn prev" onClick={() => void renditionRef.current?.prev()} title="上一页">‹</button>
-          <button className="page-turn next" onClick={() => void renditionRef.current?.next()} title="下一页">›</button>
+          <button className="page-turn prev" onClick={() => {
+            const rendition = renditionRef.current
+            if (!rendition) return
+            const win = firstContents(rendition)?.window
+            if (!win) return
+            if (win.scrollY <= 4) void rendition.prev()
+            else win.scrollTo(0, Math.max(0, win.scrollY - (win.innerHeight - 40)))
+          }} title="上一页">‹</button>
+          <button className="page-turn next" onClick={() => {
+            const rendition = renditionRef.current
+            if (!rendition) return
+            const win = firstContents(rendition)?.window
+            if (!win) return
+            const doc = win.document
+            if (win.scrollY + win.innerHeight >= doc.body.scrollHeight - 8) void rendition.next()
+            else win.scrollTo(0, win.scrollY + win.innerHeight - 40)
+          }} title="下一页">›</button>
         </>
       ) : null}
 

@@ -1724,3 +1724,6 @@ input { font-family: inherit; }
   .map-strip { padding: 8px 12px; gap: 6px; }
   .map-thumb { width: 54px; height: 40px; }
 }
+
+.epub-stage.is-paged iframe { width: 100% !important; height: 100% !important; }
+.epub-stage.is-paged .epub-view { height: 100% !important; }
