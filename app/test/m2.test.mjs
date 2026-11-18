@@ -115,7 +115,7 @@ console.log('== 四、href 归一化与章节名映射 ==')
 }
 
 console.log('== 五、笔记筛选 / 标签 / 排序 ==')
-const now = new Date('2026-11-13T14:05:00').getTime()
+const now = Date.now()
 const books = [
   { id: 'b1', title: '旧渡口', author: '纸间测试组', cover: 'c1', encoding: 'utf-8', charCount: 1000, chapterCount: 3, toc: ['第一章 风起', '第二章 夜行', '第三章 旧渡'], byteSize: 1, createdAt: now, lastReadAt: now, chapterIndex: 0, scrollRatio: 0, format: 'epub' },
   { id: 'b2', title: '长夜灯影', author: '纸间测试组', cover: 'c2', encoding: 'utf-8', charCount: 2000, chapterCount: 2, toc: ['第一章 灯', '第二章 影'], byteSize: 1, createdAt: now, lastReadAt: now - 1000, chapterIndex: 1, scrollRatio: 0.5, format: 'txt' },
@@ -149,7 +149,9 @@ console.log('== 六、Markdown 导出（按章节分组）==')
   ok('原文以引用呈现', markdown.includes('> 原文 n2'))
   ok('批注', markdown.includes('**批注**：这句好'))
   ok('标签', markdown.includes('**标签**：`#山雨`'))
-  ok('颜色与时间', markdown.includes('颜色：赭黄') && markdown.includes('时间：2026-11-13'))
+  const date = new Date(now)
+  const dayText = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0')
+  ok('颜色与时间', markdown.includes('颜色：赭黄') && markdown.includes('时间：' + dayText))
   ok('章节内按目录顺序（先第一章后第二章）', markdown.indexOf('### 第一章 风起') < markdown.indexOf('### 第二章 夜行'))
   ok('书目按最近阅读排序', markdown.indexOf('## 《旧渡口》') < markdown.indexOf('## 《长夜灯影》'))
   ok('导出文件名带书名', notesFileName([books[0]], new Date('2026-11-13T14:05:00').getTime()).startsWith('纸间笔记-旧渡口-'))
