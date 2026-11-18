@@ -76,6 +76,13 @@ export type SyncConflict = {
 }
 
 export type SyncConfig = {
+  /** 默认 WebDAV；s3 表示 S3 兼容存储（MinIO / R2 / AWS） */
+  provider?: 'webdav' | 's3'
+  s3Endpoint?: string
+  s3Bucket?: string
+  s3Region?: string
+  s3AccessKey?: string
+  s3SecretKey?: string
   url: string
   user: string
   pass: string

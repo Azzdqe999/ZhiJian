@@ -123,24 +123,111 @@ function decodeBase64(text: string): ArrayBuffer {
   return bytes.buffer
 }
 
+function isS3(config: SyncConfig): boolean {
+  return config.provider === 's3'
+}
+
+function s3ObjectUrl(config: SyncConfig, name: string): string {
+  const endpoint = (config.s3Endpoint || '').replace(/\/+$/, '')
+  const bucket = (config.s3Bucket || '').replace(/^\/+|\/+$/g, '')
+  return endpoint + '/' + bucket + '/NovelReader/' + name
+}
+
+function rfc3986(value: string): string {
+  return encodeURIComponent(value).replace(/[!'()*]/g, (char) => '%' + char.charCodeAt(0).toString(16).toUpperCase())
+}
+
+async function sha256Hex(input: string | ArrayBuffer): Promise<string> {
+  const data = typeof input === 'string' ? new TextEncoder().encode(input) : new Uint8Array(input)
+  const hash = await crypto.subtle.digest('SHA-256', data)
+  return [...new Uint8Array(hash)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+async function hmacSha256(key: ArrayBuffer | Uint8Array, data: string): Promise<ArrayBuffer> {
+  const raw = key instanceof Uint8Array ? key : new Uint8Array(key)
+  const cryptoKey = await crypto.subtle.importKey('raw', raw, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+  return crypto.subtle.sign('HMAC', cryptoKey, new TextEncoder().encode(data))
+}
+
+async function s3Headers(config: SyncConfig, method: string, name: string, body: string, contentType?: string): Promise<Record<string, string>> {
+  const endpoint = new URL((config.s3Endpoint || '').replace(/\/+$/, ''))
+  const bucket = (config.s3Bucket || '').replace(/^\/+|\/+$/g, '')
+  const region = config.s3Region || 'us-east-1'
+  const key = 'NovelReader/' + name
+  const basePath = endpoint.pathname.replace(/\/+$/, '')
+  const canonicalUri = basePath + '/' + rfc3986(bucket) + '/' + key.split('/').map(rfc3986).join('/')
+  const now = new Date()
+  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '')
+  const dateStamp = amzDate.slice(0, 8)
+  const payloadHash = await sha256Hex(body)
+  const headers: Record<string, string> = {
+    'x-amz-content-sha256': payloadHash,
+    'x-amz-date': amzDate,
+  }
+  if (contentType) headers['content-type'] = contentType
+  const signedHeaderNames = ['host', ...Object.keys(headers)].sort()
+  const canonicalHeaders = signedHeaderNames.map((header) => header + ':' + (header === 'host' ? endpoint.host : headers[header]) + '\n').join('')
+  const signedHeaders = signedHeaderNames.join(';')
+  const canonicalRequest = [method, canonicalUri, '', canonicalHeaders, signedHeaders, payloadHash].join('\n')
+  const scope = dateStamp + '/' + region + '/s3/aws4_request'
+  const stringToSign = ['AWS4-HMAC-SHA256', amzDate, scope, await sha256Hex(canonicalRequest)].join('\n')
+  const kDate = await hmacSha256(new TextEncoder().encode('AWS4' + config.s3SecretKey), dateStamp)
+  const kRegion = await hmacSha256(kDate, region)
+  const kService = await hmacSha256(kRegion, 's3')
+  const kSigning = await hmacSha256(kService, 'aws4_request')
+  const signature = [...new Uint8Array(await hmacSha256(kSigning, stringToSign))].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+  headers.Authorization = 'AWS4-HMAC-SHA256 Credential=' + config.s3AccessKey + '/' + scope + ', SignedHeaders=' + signedHeaders + ', Signature=' + signature
+  return headers
+}
+
+async function s3(
+  config: SyncConfig,
+  method: string,
+  name: string,
+  body = '',
+  contentType?: string,
+): Promise<{ status: number; text: string }> {
+  const url = s3ObjectUrl(config, name)
+  const headers = await s3Headers(config, method, name, body, contentType)
+  if (window.paperSync) {
+    const res = await window.paperSync.request({ method, url, headers, body: body || null })
+    return { status: res.status, text: new TextDecoder().decode(toArrayBuffer(res.body)) }
+  }
+  if (Capacitor.isNativePlatform()) {
+    const res = await DavHttp.request({ method, url, headers, body: body || null })
+    const binary = atob(res.body || '')
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
+    return { status: res.status, text: new TextDecoder().decode(bytes) }
+  }
+  const res = await fetch(url, { method, headers, body: body || undefined })
+  return { status: res.status, text: await res.text() }
+}
+
 async function getText(config: SyncConfig, name: string): Promise<string | null> {
-  const res = await dav('GET', joinUrl(config.url, name), { Authorization: basicAuth(config.user, config.pass) })
+  const res = isS3(config)
+    ? await s3(config, 'GET', name)
+    : await dav('GET', joinUrl(config.url, name), { Authorization: basicAuth(config.user, config.pass) })
   if (res.status === 404) return null
   if (res.status !== 200) throw new Error('下载失败 ' + name + '（HTTP ' + res.status + '）')
   return res.text
 }
 
 async function putText(config: SyncConfig, name: string, text: string): Promise<void> {
-  const res = await dav('PUT', joinUrl(config.url, name), {
-    Authorization: basicAuth(config.user, config.pass),
-    'Content-Type': 'text/plain; charset=utf-8',
-  }, text)
+  const res = isS3(config)
+    ? await s3(config, 'PUT', name, text, 'text/plain; charset=utf-8')
+    : await dav('PUT', joinUrl(config.url, name), {
+        Authorization: basicAuth(config.user, config.pass),
+        'Content-Type': 'text/plain; charset=utf-8',
+      }, text)
   if (![200, 201, 204, 207].includes(res.status)) throw new Error('上传失败 ' + name + '（HTTP ' + res.status + '）')
 }
 
 async function exists(config: SyncConfig, name: string): Promise<boolean> {
   try {
-    const res = await dav('HEAD', joinUrl(config.url, name), { Authorization: basicAuth(config.user, config.pass) })
+    const res = isS3(config)
+      ? await s3(config, 'HEAD', name)
+      : await dav('HEAD', joinUrl(config.url, name), { Authorization: basicAuth(config.user, config.pass) })
     return res.status === 200
   } catch {
     // Capacitor 的 fetch 对 404 的 HEAD 会抛错，这里按“不存在”处理
@@ -150,8 +237,14 @@ async function exists(config: SyncConfig, name: string): Promise<boolean> {
 
 export async function testConnection(config: SyncConfig): Promise<void> {
   const fixed = ensureConfig(config)
-  const res = await dav('GET', joinUrl(fixed.url, REGISTRY), { Authorization: basicAuth(fixed.user, fixed.pass) })
-  if (![200, 404].includes(res.status)) throw new Error('连接失败（HTTP ' + res.status + '），检查地址/账号/应用密码')
+  const res = isS3(fixed)
+    ? await s3(fixed, 'HEAD', REGISTRY)
+    : await dav('GET', joinUrl(fixed.url, REGISTRY), { Authorization: basicAuth(fixed.user, fixed.pass) })
+  if (![200, 404].includes(res.status)) {
+    throw new Error(isS3(fixed)
+      ? '连接失败（HTTP ' + res.status + '），检查 Endpoint/Bucket/Region/Access Key/Secret'
+      : '连接失败（HTTP ' + res.status + '），检查地址/账号/应用密码')
+  }
 }
 
 async function readRegistry(config: SyncConfig): Promise<string[]> {
@@ -303,7 +396,7 @@ export async function syncNow(): Promise<SyncResult> {
   const deviceId = config.deviceId as string
 
   // 坚果云不允许在 WebDAV 根写文件；桌面端负责确保子目录存在，Android 端假定已存在。
-  if (window.paperSync) {
+  if (window.paperSync && !isS3(config)) {
     await dav('MKCOL', config.url + FOLDER, { Authorization: basicAuth(config.user, config.pass) })
   }
 

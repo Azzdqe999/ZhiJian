@@ -27,6 +27,7 @@ type Props = {
 }
 
 const EMPTY_SYNC: SyncConfig = {
+  provider: 'webdav',
   url: 'https://dav.jianguoyun.com/dav/',
   user: '',
   pass: '',
@@ -381,8 +382,8 @@ export default function SettingsPanel(props: Props) {
         <h2>同步</h2>
         <div className="setting-row">
           <div>
-            <strong>WebDAV（坚果云）</strong>
-            <p>同步书架、进度、笔记、人物与插画；书文件按需上传。应用密码不是登录密码。</p>
+            <strong>同步存储（WebDAV / S3）</strong>
+            <p>支持坚果云 WebDAV，以及 MinIO、Cloudflare R2、AWS S3 兼容存储；同步书架、进度、笔记、人物与插画。</p>
           </div>
         </div>
         <div className="setting-row">
@@ -405,32 +406,89 @@ export default function SettingsPanel(props: Props) {
         </div>
         <div className="sync-form">
           <label>
-            <span>服务器</span>
-            <input
-              value={sync.url}
-              onChange={(event) => setSync({ ...sync, url: event.target.value })}
-              placeholder="https://dav.jianguoyun.com/dav/"
-              spellCheck={false}
-            />
+            <span>同步方式</span>
+            <select value={sync.provider || 'webdav'} onChange={(event) => setSync({ ...sync, provider: event.target.value as 'webdav' | 's3' })}>
+              <option value="webdav">WebDAV（坚果云）</option>
+              <option value="s3">S3 兼容（MinIO / R2 / AWS）</option>
+            </select>
           </label>
-          <label>
-            <span>账号</span>
-            <input
-              value={sync.user}
-              onChange={(event) => setSync({ ...sync, user: event.target.value })}
-              placeholder="邮箱"
-              spellCheck={false}
-            />
-          </label>
-          <label>
-            <span>应用密码</span>
-            <input
-              type="password"
-              value={sync.pass}
-              onChange={(event) => setSync({ ...sync, pass: event.target.value })}
-              placeholder="坚果云应用密码"
-            />
-          </label>
+          {(sync.provider || 'webdav') === 'webdav' ? (
+            <>
+              <label>
+                <span>服务器</span>
+                <input
+                  value={sync.url}
+                  onChange={(event) => setSync({ ...sync, url: event.target.value })}
+                  placeholder="https://dav.jianguoyun.com/dav/"
+                  spellCheck={false}
+                />
+              </label>
+              <label>
+                <span>账号</span>
+                <input
+                  value={sync.user}
+                  onChange={(event) => setSync({ ...sync, user: event.target.value })}
+                  placeholder="邮箱"
+                  spellCheck={false}
+                />
+              </label>
+              <label>
+                <span>应用密码</span>
+                <input
+                  type="password"
+                  value={sync.pass}
+                  onChange={(event) => setSync({ ...sync, pass: event.target.value })}
+                  placeholder="坚果云应用密码"
+                />
+              </label>
+            </>
+          ) : (
+            <>
+              <label>
+                <span>Endpoint</span>
+                <input
+                  value={sync.s3Endpoint || ''}
+                  onChange={(event) => setSync({ ...sync, s3Endpoint: event.target.value })}
+                  placeholder="https://s3.us-east-1.amazonaws.com"
+                  spellCheck={false}
+                />
+              </label>
+              <label>
+                <span>Bucket</span>
+                <input
+                  value={sync.s3Bucket || ''}
+                  onChange={(event) => setSync({ ...sync, s3Bucket: event.target.value })}
+                  placeholder="paper-between"
+                  spellCheck={false}
+                />
+              </label>
+              <label>
+                <span>Region</span>
+                <input
+                  value={sync.s3Region || ''}
+                  onChange={(event) => setSync({ ...sync, s3Region: event.target.value })}
+                  placeholder="us-east-1 / auto"
+                  spellCheck={false}
+                />
+              </label>
+              <label>
+                <span>Access Key</span>
+                <input
+                  value={sync.s3AccessKey || ''}
+                  onChange={(event) => setSync({ ...sync, s3AccessKey: event.target.value })}
+                  spellCheck={false}
+                />
+              </label>
+              <label>
+                <span>Secret Key</span>
+                <input
+                  type="password"
+                  value={sync.s3SecretKey || ''}
+                  onChange={(event) => setSync({ ...sync, s3SecretKey: event.target.value })}
+                />
+              </label>
+            </>
+          )}
           <label>
             <span>自动同步</span>
             <select value={sync.autoMinutes || 0} onChange={(event) => setSync({ ...sync, autoMinutes: Number(event.target.value) })}>
