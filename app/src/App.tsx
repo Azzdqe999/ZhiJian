@@ -75,6 +75,8 @@ import { searchLibrary } from './lib/search'
 import { TtsPlayer, ttsSupported } from './lib/tts'
 import { setVolumePaging } from './lib/keys'
 import { buildTtsSegments } from './lib/tts-text'
+import { listJumps, recordJump } from './lib/jump-history'
+import type { JumpEntry } from './lib/jump-history'
 import type { SearchHit } from './lib/search'
 import CharacterDrawer from './components/CharacterDrawer'
 import CharacterCard from './components/CharacterCard'
@@ -2157,6 +2159,7 @@ function Reader({
   const [attempt, setAttempt] = useState(0)
   const [selection, setSelection] = useState<{ text: string; left: number; top: number; para: number } | null>(null)
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
+  const [jumps, setJumps] = useState<JumpEntry[]>([])
   const [speaking, setSpeaking] = useState(false)
   const [ttsIndex, setTtsIndex] = useState(0)
   const [ttsRate, setTtsRate] = useState(0.9)
@@ -2214,17 +2217,6 @@ function Reader({
     }
     void window.paperOverlay?.update({ ...ttsOverlay, title: book.title, paused: ttsPaused })
   }, [speaking, ttsPaused, ttsOverlay, book.title])
-
-  useEffect(() => {
-    const off = window.paperOverlay?.onAction((action) => {
-      if (action === 'toggle') setTtsPaused(playerRef.current.togglePause())
-      if (action === 'close') {
-        overlayDismissed.current = true
-        void window.paperOverlay?.hide()
-      }
-    })
-    return () => off?.()
-  }, [])
 
   const startTts = (from: number, rate = ttsRate) => {
     const raw = chapter ? toParagraphs(chapter.text) : []
@@ -2291,6 +2283,19 @@ function Reader({
     if (!playerRef.current.forward(5)) startTts(Math.min(total - 1, ttsIndex + 1))
   }
 
+  useEffect(() => {
+    const off = window.paperOverlay?.onAction((action) => {
+      if (action === 'toggle') setTtsPaused(playerRef.current.togglePause())
+      if (action === 'back5') rewindTts()
+      if (action === 'forward5') forwardTts()
+      if (action === 'close') {
+        overlayDismissed.current = true
+        void window.paperOverlay?.hide()
+      }
+    })
+    return () => off?.()
+  }, [ttsIndex, ttsPaused])
+
   const scrubTts = (value: number) => {
     setTtsScrub(null)
     startTts(Math.max(0, Math.min(buildTtsSegments(paragraphs).length - 1, value)))
@@ -2304,7 +2309,20 @@ function Reader({
 
   useEffect(() => {
     void listBookmarks(book.id).then(setBookmarks)
+    setJumps(listJumps(book.id))
   }, [book.id])
+
+  useEffect(() => {
+    if (!chapter) return
+    recordJump({
+      bookId: book.id,
+      bookTitle: book.title,
+      index,
+      chapterTitle: chapter.title,
+      at: Date.now(),
+    })
+    setJumps(listJumps(book.id))
+  }, [book.id, book.title, index, chapter])
 
   const addBookmark = async () => {
     const bookmark: Bookmark = {
@@ -2753,7 +2771,7 @@ function Reader({
 
       {speaking ? (
         <div className="tts-bar" onMouseDown={(event) => event.stopPropagation()}>
-          <button className="tts-chip" onClick={toggleTtsPause}>{ttsPaused ? '继续' : '暂停'}</button>
+          <button className="tts-chip tts-pause" onClick={toggleTtsPause} title={ttsPaused ? '继续' : '暂停'}>{ttsPaused ? '▶' : '⏸'}</button>
           <button className="tts-chip" onClick={rewindTts} title="回退 5 秒">−5s</button>
           <button className="tts-chip" onClick={forwardTts} title="前进 5 秒">+5s</button>
           <span className="tts-count">{ttsIndex + 1} / {ttsSegments.length}</span>
@@ -2855,6 +2873,18 @@ function Reader({
                 <button className="drawer-close" onClick={() => setDrawer(false)}>关闭</button>
               </div>
             </div>
+            {jumps.length ? (
+              <div className="drawer-bookmarks">
+                <div className="drawer-sub">最近跳转 · {jumps.length}</div>
+                {jumps.map((jump) => (
+                  <div className="drawer-bookmark" key={jump.bookId + '-' + jump.index + '-' + jump.at}>
+                    <button className="link" onClick={() => { go(jump.index); setDrawer(false) }}>
+                      {jump.chapterTitle}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
             {bookmarks.length ? (
               <div className="drawer-bookmarks">
                 <div className="drawer-sub">书签 · {bookmarks.length}</div>

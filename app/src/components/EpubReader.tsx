@@ -15,6 +15,8 @@ import { extractCharacters, extractPlaces, loadAiConfig, summarizeChapter } from
 import { TtsPlayer, ttsSupported } from '../lib/tts'
 import { setVolumePaging } from '../lib/keys'
 import { buildTtsSegments } from '../lib/tts-text'
+import { listJumps, recordJump } from '../lib/jump-history'
+import type { JumpEntry } from '../lib/jump-history'
 import type { AiCharacter } from '../lib/ai'
 
 type TocRow = { label: string; href: string; level: number }
@@ -192,9 +194,19 @@ export default function EpubReader(props: EpubReaderProps) {
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [aiBusy, setAiBusy] = useState(false)
   const [zoomImage, setZoomImage] = useState<string | null>(null)
+  const [gallery, setGallery] = useState<{ images: string[]; index: number } | null>(null)
   const [zoomScale, setZoomScale] = useState(1)
   const [zoomPan, setZoomPan] = useState({ x: 0, y: 0 })
   const zoomDragRef = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null)
+
+  const showGallery = (delta: number) => {
+    if (!gallery || gallery.images.length < 2) return
+    const index = (gallery.index + delta + gallery.images.length) % gallery.images.length
+    setGallery({ ...gallery, index })
+    setZoomImage(gallery.images[index])
+    setZoomScale(1)
+    setZoomPan({ x: 0, y: 0 })
+  }
 
   useEffect(() => {
     if (!zoomImage) return
@@ -202,17 +214,29 @@ export default function EpubReader(props: EpubReaderProps) {
       if (event.key === 'Escape') {
         event.stopPropagation()
         setZoomImage(null)
+        setGallery(null)
+        return
+      }
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault()
+        showGallery(-1)
+      }
+      if (event.key === 'ArrowRight') {
+        event.preventDefault()
+        showGallery(1)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [zoomImage])
+  }, [zoomImage, gallery])
   const [error, setError] = useState<string | null>(null)
   const [toc, setToc] = useState<TocRow[]>([])
   const [drawer, setDrawer] = useState(false)
   const [currentHref, setCurrentHref] = useState('')
   const [currentIndex, setCurrentIndex] = useState(book.chapterIndex || 0)
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
+  const [jumps, setJumps] = useState<JumpEntry[]>([])
+  const lastJumpRef = useRef(-1)
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchHits, setSearchHits] = useState<Array<{ cfi: string; excerpt: string; chapter: string }>>([])
@@ -346,17 +370,6 @@ export default function EpubReader(props: EpubReaderProps) {
     void window.paperOverlay?.update({ ...ttsOverlay, title: book.title, paused: ttsPaused })
   }, [speaking, ttsPaused, ttsOverlay, book.title])
 
-  useEffect(() => {
-    const off = window.paperOverlay?.onAction((action) => {
-      if (action === 'toggle') setTtsPaused(playerRef.current.togglePause())
-      if (action === 'close') {
-        overlayDismissed.current = true
-        void window.paperOverlay?.hide()
-      }
-    })
-    return () => off?.()
-  }, [])
-
   const startTts = (from: number, rate = ttsRate) => {
     const rendition = renditionRef.current
     const contents = rendition ? firstContents(rendition) : null
@@ -461,6 +474,19 @@ export default function EpubReader(props: EpubReaderProps) {
     if (!playerRef.current.forward(5)) startTts(Math.min(Math.max(0, ttsTotal - 1), ttsIndex + 1))
   }
 
+  useEffect(() => {
+    const off = window.paperOverlay?.onAction((action) => {
+      if (action === 'toggle') setTtsPaused(playerRef.current.togglePause())
+      if (action === 'back5') rewindTts()
+      if (action === 'forward5') forwardTts()
+      if (action === 'close') {
+        overlayDismissed.current = true
+        void window.paperOverlay?.hide()
+      }
+    })
+    return () => off?.()
+  }, [ttsIndex, ttsPaused, ttsTotal])
+
   const scrubTts = (value: number) => {
     setTtsScrub(null)
     startTts(Math.max(0, Math.min(Math.max(0, ttsTotal - 1), value)))
@@ -474,6 +500,7 @@ export default function EpubReader(props: EpubReaderProps) {
 
   useEffect(() => {
     void listBookmarks(book.id).then(setBookmarks)
+    setJumps(listJumps(book.id))
   }, [book.id])
 
   const addBookmark = async () => {
@@ -741,6 +768,18 @@ export default function EpubReader(props: EpubReaderProps) {
         setAtEnd(Boolean(location.atEnd) || index >= spineCountRef.current - 1)
         if (start.cfi) {
           cfiRef.current = start.cfi
+          if (lastJumpRef.current !== index) {
+            lastJumpRef.current = index
+            recordJump({
+              bookId: book.id,
+              bookTitle: book.title,
+              index,
+              chapterTitle: titleForHref(href, tocRef.current) || tocRef.current[index]?.label || '正文',
+              cfi: start.cfi,
+              at: Date.now(),
+            })
+            setJumps(listJumps(book.id))
+          }
           reportProgress(start.cfi, index, ratioRef.current)
           const ordinal = linearOrdinal(index)
           setPercent(Math.max(0, Math.min(100, Math.round((((ordinal - 1) + ratioRef.current) / linearCountRef.current) * 100))))
@@ -778,7 +817,13 @@ export default function EpubReader(props: EpubReaderProps) {
             el.addEventListener('click', (event) => {
               event.preventDefault()
               event.stopPropagation()
-              setZoomImage(el.currentSrc || el.src)
+              const images = Array.from(doc.querySelectorAll('img'))
+                .map((image) => image.currentSrc || image.src)
+                .filter((src) => Boolean(src))
+              const src = el.currentSrc || el.src
+              const index = Math.max(0, images.indexOf(src))
+              setGallery(images.length > 1 ? { images, index } : null)
+              setZoomImage(src)
               setZoomScale(1)
               setZoomPan({ x: 0, y: 0 })
             })
@@ -1457,7 +1502,7 @@ export default function EpubReader(props: EpubReaderProps) {
 
       {speaking ? (
         <div className="tts-bar">
-          <button className="tts-chip" onClick={toggleTtsPause}>{ttsPaused ? '继续' : '暂停'}</button>
+          <button className="tts-chip tts-pause" onClick={toggleTtsPause} title={ttsPaused ? '继续' : '暂停'}>{ttsPaused ? '▶' : '⏸'}</button>
           <button className="tts-chip" onClick={rewindTts} title="回退 5 秒">−5s</button>
           <button className="tts-chip" onClick={forwardTts} title="前进 5 秒">+5s</button>
           <span className="tts-count">{ttsIndex + 1} / {ttsTotal || '—'}</span>
@@ -1503,6 +1548,21 @@ export default function EpubReader(props: EpubReaderProps) {
                 <button className="drawer-close" onClick={() => setDrawer(false)}>关闭</button>
               </div>
             </div>
+            {jumps.length ? (
+              <div className="drawer-bookmarks">
+                <div className="drawer-sub">最近跳转 · {jumps.length}</div>
+                {jumps.map((jump) => (
+                  <div className="drawer-bookmark" key={jump.bookId + '-' + jump.index + '-' + jump.at}>
+                    <button className="link" onClick={() => {
+                      setDrawer(false)
+                      if (jump.cfi) renditionRef.current?.display(jump.cfi).catch(() => {})
+                    }}>
+                      {jump.chapterTitle}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
             {bookmarks.length ? (
               <div className="drawer-bookmarks">
                 <div className="drawer-sub">书签 · {bookmarks.length}</div>
@@ -1590,14 +1650,21 @@ export default function EpubReader(props: EpubReaderProps) {
       )}
 
       {zoomImage && (
-        <div className="image-zoom" onClick={() => setZoomImage(null)}>
+        <div className="image-zoom" onClick={() => { setZoomImage(null); setGallery(null) }}>
           <div className="image-zoom-bar" onClick={(event) => event.stopPropagation()}>
             <button onClick={() => setZoomScale((value) => Math.max(0.5, value - 0.25))}>−</button>
             <span>{Math.round(zoomScale * 100)}%</span>
             <button onClick={() => setZoomScale((value) => Math.min(6, value + 0.25))}>+</button>
             <button onClick={() => { setZoomScale(1); setZoomPan({ x: 0, y: 0 }) }}>1:1</button>
-            <button onClick={() => setZoomImage(null)}>关闭</button>
+            {gallery ? <span>{gallery.index + 1} / {gallery.images.length}</span> : null}
+            <button onClick={() => { setZoomImage(null); setGallery(null) }}>关闭</button>
           </div>
+          {gallery && gallery.images.length > 1 ? (
+            <button className="image-nav prev" onClick={(event) => { event.stopPropagation(); showGallery(-1) }}>‹</button>
+          ) : null}
+          {gallery && gallery.images.length > 1 ? (
+            <button className="image-nav next" onClick={(event) => { event.stopPropagation(); showGallery(1) }}>›</button>
+          ) : null}
           <img
             src={zoomImage}
             alt=""

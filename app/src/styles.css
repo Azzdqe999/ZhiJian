@@ -1813,3 +1813,9 @@ input { font-family: inherit; }
 .qa-input { width: 100%; margin: 10px 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--ink); font-size: 14px; line-height: 1.7; resize: vertical; }
 .qa-actions { display: flex; align-items: center; gap: 12px; }
 .qa-answer { margin-top: 14px; padding: 12px 14px; border-left: 3px solid var(--accent); background: var(--paper2); border-radius: 6px; font-size: 14px; line-height: 1.9; white-space: pre-wrap; }
+
+.image-nav { position: fixed; top: 50%; transform: translateY(-50%); z-index: 201; width: 46px; height: 72px; border: 1px solid var(--line); border-radius: 10px; background: color-mix(in srgb, var(--card) 85%, transparent); color: var(--ink); font-size: 28px; line-height: 1; }
+.image-nav.prev { left: 18px; }
+.image-nav.next { right: 18px; }
+.image-nav:hover { border-color: var(--accent); color: var(--accent); }
+.tts-chip.tts-pause { min-width: 34px; padding: 4px 8px; font-size: 14px; line-height: 1; }

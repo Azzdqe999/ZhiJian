@@ -14,8 +14,11 @@
   .prev, .next { color: #8f8578; }
   .current { color: #f3ede2; background: rgba(164,85,47,0.22); border-left: 3px solid #a4552f; padding: 4px 8px; border-radius: 4px; -webkit-line-clamp: 3; }
   .actions { margin-top: auto; display: flex; align-items: center; justify-content: space-between; -webkit-app-region: no-drag; }
-  button.pause { padding: 5px 12px; border: 1px solid #4a443b; border-radius: 14px; background: transparent; color: #f3ede2; font-size: 12px; cursor: pointer; }
-  button.pause:hover { border-color: #a4552f; color: #e8b08f; }
+  .controls { display: flex; align-items: center; gap: 6px; }
+  button.ctl { padding: 4px 8px; border: 1px solid #4a443b; border-radius: 12px; background: transparent; color: #cfc4b4; font-size: 11px; cursor: pointer; }
+  button.ctl:hover { border-color: #a4552f; color: #e8b08f; }
+  button.pause { width: 34px; height: 30px; border: 1px solid #a4552f; border-radius: 50%; background: rgba(164,85,47,0.18); color: #f3ede2; font-size: 13px; line-height: 1; cursor: pointer; }
+  button.pause:hover { background: rgba(164,85,47,0.35); }
   .hint { font-family: sans-serif; font-size: 10px; color: #6f665a; }
 </style>
 </head>
@@ -26,7 +29,11 @@
     <p class="current" id="current">等待朗读…</p>
     <p class="next" id="next"></p>
     <div class="actions">
-      <button class="pause" id="pause">暂停</button>
+      <div class="controls">
+        <button class="ctl" id="back" title="回退 5 秒">−5s</button>
+        <button class="pause" id="pause" title="暂停">⏸</button>
+        <button class="ctl" id="forward" title="前进 5 秒">+5s</button>
+      </div>
       <span class="hint">拖动窗口移动 · 始终置顶</span>
     </div>
   </div>
@@ -43,9 +50,12 @@
       nodes.prev.textContent = data.prev || ''
       nodes.current.textContent = data.current || ''
       nodes.next.textContent = data.next || ''
-      nodes.pause.textContent = data.paused ? '继续' : '暂停'
+      nodes.pause.textContent = data.paused ? '▶' : '⏸'
+      nodes.pause.title = data.paused ? '继续' : '暂停'
     })
     nodes.pause.addEventListener('click', () => window.paperOverlay.action('toggle'))
+    document.getElementById('back').addEventListener('click', () => window.paperOverlay.action('back5'))
+    document.getElementById('forward').addEventListener('click', () => window.paperOverlay.action('forward5'))
     document.getElementById('close').addEventListener('click', () => window.paperOverlay.close())
   </script>
 </body>
