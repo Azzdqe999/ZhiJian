@@ -48,7 +48,7 @@ function speakWeb(text: string, rate: number): Promise<void> {
   })
 }
 
-async function synthesizeEdge(text: string, rate: number): Promise<HTMLAudioElement> {
+async function synthesizeEdgeOnce(text: string, rate: number): Promise<HTMLAudioElement> {
   if (!window.paperTts) throw new Error('Edge TTS 不可用')
   const base64 = await window.paperTts.synthesize({
     text,
@@ -58,6 +58,18 @@ async function synthesizeEdge(text: string, rate: number): Promise<HTMLAudioElem
   const audio = new Audio('data:audio/mpeg;base64,' + base64)
   audio.preload = 'auto'
   return audio
+}
+
+async function synthesizeEdge(text: string, rate: number): Promise<HTMLAudioElement | null> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await synthesizeEdgeOnce(text, rate)
+    } catch (error) {
+      console.warn('Edge TTS 合成失败，重试', attempt + 1, error)
+      await new Promise((resolve) => window.setTimeout(resolve, 500 + attempt * 700))
+    }
+  }
+  return null
 }
 
 function playAudio(audio: HTMLAudioElement): Promise<void> {
@@ -79,10 +91,23 @@ export class TtsPlayer {
     if (currentAudio) currentAudio.volume = this.volume
   }
 
-  rewind(seconds: number): boolean {
-    if (!currentAudio || !Number.isFinite(currentAudio.duration)) return false
-    currentAudio.currentTime = Math.max(0, currentAudio.currentTime - seconds)
+  seek(seconds: number): boolean {
+    if (!currentAudio || !Number.isFinite(currentAudio.duration) || currentAudio.duration <= 0) return false
+    const next = currentAudio.currentTime + seconds
+    if (next >= currentAudio.duration) {
+      currentAudio.currentTime = Math.max(0, currentAudio.duration - 0.05)
+    } else {
+      currentAudio.currentTime = Math.max(0, next)
+    }
     return true
+  }
+
+  rewind(seconds: number): boolean {
+    return this.seek(-seconds)
+  }
+
+  forward(seconds: number): boolean {
+    return this.seek(seconds)
   }
 
   get active(): boolean {
@@ -96,7 +121,7 @@ export class TtsPlayer {
     const run = ++this.sequence
     try {
       if (window.paperTts && !Capacitor.isNativePlatform()) {
-        let next: Promise<HTMLAudioElement> | null = null
+        let next: Promise<HTMLAudioElement | null> | null = null
         for (let index = Math.max(0, start); index < segments.length; index++) {
           if (this.stopped || run !== this.sequence) return
           const text = segments[index].trim()
@@ -106,9 +131,19 @@ export class TtsPlayer {
           const audio = await next
           next = index + 1 < segments.length ? synthesizeEdge(segments[index + 1].trim(), rate) : null
           if (this.stopped || run !== this.sequence) return
-          audio.volume = this.volume
-          audio.ontimeupdate = () => handlers.onTime?.(audio.currentTime, audio.duration || 0)
-          await playAudio(audio)
+          if (audio) {
+            audio.volume = this.volume
+            audio.ontimeupdate = () => handlers.onTime?.(audio.currentTime, audio.duration || 0)
+            try {
+              await playAudio(audio)
+            } catch (error) {
+              console.warn('Edge TTS 播放失败，回退系统语音', error)
+              await speakWeb(text, rate)
+            }
+          } else {
+            console.warn('Edge TTS 无音频，回退系统语音')
+            await speakWeb(text, rate)
+          }
         }
         if (!this.stopped && run === this.sequence) handlers.onDone?.()
         return

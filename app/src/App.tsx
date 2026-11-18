@@ -72,6 +72,7 @@ import MapViewer from './components/MapViewer'
 import ReaderSheet from './components/ReaderSheet'
 import { searchLibrary } from './lib/search'
 import { TtsPlayer, ttsSupported } from './lib/tts'
+import { buildTtsSegments } from './lib/tts-text'
 import type { SearchHit } from './lib/search'
 import CharacterDrawer from './components/CharacterDrawer'
 import CharacterCard from './components/CharacterCard'
@@ -2183,14 +2184,15 @@ function Reader({
   }, [ttsVolume])
 
   const startTts = (from: number, rate = ttsRate) => {
-    const segments = chapter ? toParagraphs(chapter.text) : []
+    const segments = chapter ? buildTtsSegments(toParagraphs(chapter.text)) : []
     if (!segments.length) return
-    const start = Math.max(0, Math.min(segments.length - 1, from))
+    const found = segments.findIndex((item) => item.para >= from)
+    const start = Math.max(0, Math.min(segments.length - 1, found >= 0 ? found : segments.length - 1))
     setTtsIndex(start)
     setTtsTime({ current: 0, duration: 0 })
     setSpeaking(true)
     playerRef.current.setVolume(ttsVolume)
-    void playerRef.current.play(segments, start, rate, {
+    void playerRef.current.play(segments.map((item) => item.text), start, rate, {
       onSegment: (value) => { setTtsIndex(value); setTtsTime({ current: 0, duration: 0 }) },
       onTime: (current, duration) => setTtsTime({ current, duration }),
       onDone: () => setSpeaking(false),
@@ -2228,9 +2230,14 @@ function Reader({
     if (!playerRef.current.rewind(5)) startTts(Math.max(0, ttsIndex - 1))
   }
 
+  const forwardTts = () => {
+    const total = buildTtsSegments(paragraphs).length
+    if (!playerRef.current.forward(5)) startTts(Math.min(total - 1, ttsIndex + 1))
+  }
+
   const scrubTts = (value: number) => {
     setTtsScrub(null)
-    startTts(Math.max(0, Math.min(paragraphs.length - 1, value)))
+    startTts(Math.max(0, Math.min(buildTtsSegments(paragraphs).length - 1, value)))
   }
 
   const formatTime = (seconds: number) => {
@@ -2295,6 +2302,7 @@ function Reader({
   const snapTimer = useRef<number | null>(null)
 
   const paragraphs = useMemo(() => (chapter ? toParagraphs(chapter.text) : []), [chapter])
+  const ttsSegments = useMemo(() => buildTtsSegments(paragraphs), [paragraphs])
   const chapterWords = useMemo(() => (chapter ? countWords(chapter.text) : 0), [chapter])
   const matcher = useMemo(() => buildMatcher(characters), [characters])
   const percent = Math.max(0, Math.min(100, Math.round(((index + ratio) / Math.max(1, book.chapterCount)) * 100)))
@@ -2638,7 +2646,7 @@ function Reader({
         )}
         {!loading && !error &&
           paragraphs.map((paragraph, i) => (
-            <p key={i} className={speaking && ttsIndex === i ? 'is-tts' : undefined}>
+            <p key={i} className={speaking && ttsSegments[ttsIndex]?.para === i ? 'is-tts' : undefined}>
               <CharacterText
                 text={paragraph}
                 matcher={matcher}
@@ -2673,12 +2681,13 @@ function Reader({
       {speaking ? (
         <div className="tts-bar" onMouseDown={(event) => event.stopPropagation()}>
           <button className="tts-chip" onClick={rewindTts} title="回退 5 秒">−5s</button>
-          <span className="tts-count">{ttsIndex + 1} / {paragraphs.length}</span>
+          <button className="tts-chip" onClick={forwardTts} title="前进 5 秒">+5s</button>
+          <span className="tts-count">{ttsIndex + 1} / {ttsSegments.length}</span>
           <input
             className="tts-progress"
             type="range"
             min={0}
-            max={Math.max(0, paragraphs.length - 1)}
+            max={Math.max(0, ttsSegments.length - 1)}
             value={ttsScrub ?? ttsIndex}
             onChange={(event) => setTtsScrub(Number(event.target.value))}
             onPointerUp={() => scrubTts(ttsScrub ?? ttsIndex)}

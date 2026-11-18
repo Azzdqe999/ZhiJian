@@ -12,6 +12,7 @@ import NoteEditor from './NoteEditor'
 import type { NoteEditorValues } from './NoteEditor'
 import { extractCharacters, extractPlaces, loadAiConfig, summarizeChapter } from '../lib/ai'
 import { TtsPlayer, ttsSupported } from '../lib/tts'
+import { buildTtsSegments } from '../lib/tts-text'
 import type { AiCharacter } from '../lib/ai'
 
 type TocRow = { label: string; href: string; level: number }
@@ -311,8 +312,13 @@ export default function EpubReader(props: EpubReaderProps) {
       props.onToast('这一页还没有可朗读的文字')
       return
     }
-    const start = Math.max(0, Math.min(rows.length - 1, from))
-    const segments = rows.map((row) => (row.textContent || '').trim())
+    const segments = buildTtsSegments(rows.map((row) => (row.textContent || '').trim()))
+    if (!segments.length) {
+      props.onToast('这一页还没有可朗读的文字')
+      return
+    }
+    const found = segments.findIndex((item) => item.para >= from)
+    const start = Math.max(0, Math.min(segments.length - 1, found >= 0 ? found : segments.length - 1))
     rows.forEach((row) => row.classList.remove('paper-tts-active'))
     const styleId = 'paper-tts-style'
     if (!doc.getElementById(styleId)) {
@@ -326,10 +332,10 @@ export default function EpubReader(props: EpubReaderProps) {
     setTtsTime({ current: 0, duration: 0 })
     setSpeaking(true)
     playerRef.current.setVolume(ttsVolume)
-    void playerRef.current.play(segments, start, rate, {
+    void playerRef.current.play(segments.map((item) => item.text), start, rate, {
       onSegment: (value) => {
         rows.forEach((row) => row.classList.remove('paper-tts-active'))
-        const current = rows[value]
+        const current = rows[segments[value]?.para ?? 0]
         if (current) {
           current.classList.add('paper-tts-active')
           current.scrollIntoView({ block: 'center', behavior: 'smooth' })
@@ -371,6 +377,10 @@ export default function EpubReader(props: EpubReaderProps) {
 
   const rewindTts = () => {
     if (!playerRef.current.rewind(5)) startTts(Math.max(0, ttsIndex - 1))
+  }
+
+  const forwardTts = () => {
+    if (!playerRef.current.forward(5)) startTts(Math.min(Math.max(0, ttsTotal - 1), ttsIndex + 1))
   }
 
   const scrubTts = (value: number) => {
@@ -1354,6 +1364,7 @@ export default function EpubReader(props: EpubReaderProps) {
       {speaking ? (
         <div className="tts-bar">
           <button className="tts-chip" onClick={rewindTts} title="回退 5 秒">−5s</button>
+          <button className="tts-chip" onClick={forwardTts} title="前进 5 秒">+5s</button>
           <span className="tts-count">{ttsIndex + 1} / {ttsTotal || '—'}</span>
           <input
             className="tts-progress"
