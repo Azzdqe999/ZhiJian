@@ -209,6 +209,49 @@ export default function EpubReader(props: EpubReaderProps) {
   const [currentHref, setCurrentHref] = useState('')
   const [currentIndex, setCurrentIndex] = useState(book.chapterIndex || 0)
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchHits, setSearchHits] = useState<Array<{ cfi: string; excerpt: string; chapter: string }>>([])
+  const [searchBusy, setSearchBusy] = useState(false)
+  const [footnote, setFootnote] = useState<string | null>(null)
+
+  const runBookSearch = async () => {
+    const query = searchQuery.trim()
+    const epubBook = bookRef.current
+    if (!epubBook || query.length < 1 || searchBusy) return
+    setSearchBusy(true)
+    setSearchHits([])
+    const hits: Array<{ cfi: string; excerpt: string; chapter: string }> = []
+    try {
+      const items = ((epubBook.spine as unknown as { spineItems?: Array<Record<string, unknown>> }).spineItems || []) as Array<{
+        load?: (loader: unknown) => Promise<void>
+        unload?: () => void
+        find?: (text: string) => Array<{ cfi: string; excerpt: string }>
+        href?: string
+      }>
+      const loader = (epubBook as unknown as { load: (...args: unknown[]) => Promise<unknown> }).load.bind(epubBook)
+      for (const section of items) {
+        if (hits.length >= 80) break
+        try {
+          if (typeof section.load === 'function') await section.load(loader)
+          const found = section.find ? section.find(query) : []
+          for (const row of found.slice(0, 8)) {
+            hits.push({
+              cfi: row.cfi,
+              excerpt: (row.excerpt || '').replace(/\s+/g, ' ').slice(0, 120),
+              chapter: titleForHref(String(section.href || ''), tocRef.current) || '正文',
+            })
+          }
+          section.unload?.()
+        } catch {
+          section.unload?.()
+        }
+      }
+      setSearchHits(hits)
+    } finally {
+      setSearchBusy(false)
+    }
+  }
   const [speaking, setSpeaking] = useState(false)
   const [ttsIndex, setTtsIndex] = useState(0)
   const [ttsTotal, setTtsTotal] = useState(0)
@@ -648,6 +691,24 @@ export default function EpubReader(props: EpubReaderProps) {
               const current = doc.getSelection()
               if (!current || current.isCollapsed || !current.toString().trim()) setToolbar(null)
             })
+            if (!root.dataset.paperFootnote) {
+              root.dataset.paperFootnote = '1'
+              doc.addEventListener('click', (event) => {
+                const anchor = (event.target as HTMLElement).closest('a')
+                if (!anchor) return
+                const href = anchor.getAttribute('href') || ''
+                const hashIndex = href.indexOf('#')
+                if (hashIndex < 0) return
+                const id = decodeURIComponent(href.slice(hashIndex + 1))
+                if (!id) return
+                const target = doc.getElementById(id)
+                if (!target) return
+                event.preventDefault()
+                event.stopPropagation()
+                const text = (target.textContent || '').replace(/\s+/g, ' ').trim()
+                if (text) setFootnote(text.slice(0, 1600))
+              }, true)
+            }
             doc.addEventListener('click', (event) => {
               if (window.innerWidth > 760) return
               const current = doc.getSelection()
@@ -1239,6 +1300,57 @@ export default function EpubReader(props: EpubReaderProps) {
         </div>
       )}
 
+      {footnote && (
+        <div className="footnote-backdrop" onClick={() => setFootnote(null)}>
+          <div className="footnote-card" onClick={(event) => event.stopPropagation()}>
+            <div className="eyebrow">注释</div>
+            <p>{footnote}</p>
+            <button className="btn solid" onClick={() => setFootnote(null)}>关闭</button>
+          </div>
+        </div>
+      )}
+
+      {searchOpen && (
+        <div className="modal-backdrop" onClick={() => setSearchOpen(false)}>
+          <div className="modal search-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <div className="eyebrow">书内搜索</div>
+                <h2>{book.title}</h2>
+              </div>
+              <button className="icon-btn" onClick={() => setSearchOpen(false)}>×</button>
+            </div>
+            <input
+              className="search-input"
+              autoFocus
+              placeholder="输入要查找的文字，回车搜索"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              onKeyDown={(event) => { if (event.key === 'Enter') void runBookSearch() }}
+            />
+            <div className="setting-inline sync-actions">
+              <button className="btn small solid" onClick={() => void runBookSearch()} disabled={searchBusy}>{searchBusy ? '搜索中…' : '搜索'}</button>
+            </div>
+            <div className="search-results">
+              {searchHits.map((hit, index) => (
+                <button
+                  key={hit.cfi + index}
+                  className="search-hit"
+                  onClick={() => {
+                    setSearchOpen(false)
+                    renditionRef.current?.display(hit.cfi).catch(() => {})
+                  }}
+                >
+                  <span className="search-hit-title">{hit.chapter}</span>
+                  <span className="search-hit-snippet">{hit.excerpt}</span>
+                </button>
+              ))}
+              {!searchBusy && searchQuery.trim() && !searchHits.length ? <p className="setting-foot">没有找到。</p> : null}
+            </div>
+          </div>
+        </div>
+      )}
+
       {speaking ? (
         <div className="tts-bar">
           <button className="tts-chip" onClick={rewindTts} title="回退 5 秒">−5s</button>
@@ -1280,6 +1392,7 @@ export default function EpubReader(props: EpubReaderProps) {
                 <div className="drawer-sub">{book.title} · 共 {drawerRows.length} 条</div>
               </div>
               <div className="drawer-head-actions">
+                <button className="btn small" onClick={() => { setSearchOpen(true); setSearchQuery(''); setSearchHits([]) }}>搜索</button>
                 <button className="btn small" onClick={() => void addBookmark()}>加书签</button>
                 <button className="drawer-close" onClick={() => setDrawer(false)}>关闭</button>
               </div>
