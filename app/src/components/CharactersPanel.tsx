@@ -27,6 +27,7 @@ export default function CharactersPanel(props: Props) {
   const [collectionFilter, setCollectionFilter] = useState('all')
   const [view, setView] = useState<'grid' | 'graph'>('grid')
   const [selectedId, setSelectedId] = useState('')
+  const [hover, setHover] = useState<{ id: string; name: string; x: number; y: number } | null>(null)
   const [relationEditor, setRelationEditor] = useState<{ a: Character; b: Character; label: string } | null>(null)
 
   const collectionScopes = useMemo(() => {
@@ -87,12 +88,68 @@ export default function CharactersPanel(props: Props) {
       }
     }
     const nodes = shown.slice(0, 80)
-    const radius = Math.min(255, 100 + nodes.length * 4)
-    const points = nodes.map((character, index) => {
-      const angle = (Math.PI * 2 * index) / Math.max(1, nodes.length) - Math.PI / 2
-      return { character, x: 450 + Math.cos(angle) * radius, y: 300 + Math.sin(angle) * radius }
+    const edges = [...edgeMap.values()]
+    const width = 900
+    const height = 600
+    const centerX = width / 2
+    const centerY = height / 2
+    const positions = nodes.map((_, index) => {
+      const angle = index * 2.399963
+      const radius = 20 + 13 * Math.sqrt(index)
+      return { x: centerX + Math.cos(angle) * radius, y: centerY + Math.sin(angle) * radius }
     })
-    return { nodes, edges: [...edgeMap.values()], points }
+    const indexOf = new Map(nodes.map((node, index) => [node.id, index]))
+    const links = edges
+      .map((edge) => ({ a: indexOf.get(edge.a.id), b: indexOf.get(edge.b.id) }))
+      .filter((link): link is { a: number; b: number } => typeof link.a === 'number' && typeof link.b === 'number')
+
+    // 轻量力导向：关系边像弹簧拉近，所有节点互相排斥，孤立节点自然散开
+    for (let iteration = 0; iteration < 280; iteration++) {
+      const forces = positions.map(() => ({ x: 0, y: 0 }))
+      for (let i = 0; i < positions.length; i++) {
+        for (let j = i + 1; j < positions.length; j++) {
+          let dx = positions[i].x - positions[j].x
+          let dy = positions[i].y - positions[j].y
+          if (dx === 0 && dy === 0) { dx = 0.5; dy = 0.5 }
+          const distance = Math.max(28, Math.hypot(dx, dy))
+          const force = 5200 / (distance * distance)
+          const fx = (dx / distance) * force
+          const fy = (dy / distance) * force
+          forces[i].x += fx
+          forces[i].y += fy
+          forces[j].x -= fx
+          forces[j].y -= fy
+        }
+      }
+      for (const link of links) {
+        const a = positions[link.a]
+        const b = positions[link.b]
+        const dx = b.x - a.x
+        const dy = b.y - a.y
+        const distance = Math.max(1, Math.hypot(dx, dy))
+        const force = (distance - 132) * 0.014
+        const fx = (dx / distance) * force
+        const fy = (dy / distance) * force
+        forces[link.a].x += fx
+        forces[link.a].y += fy
+        forces[link.b].x -= fx
+        forces[link.b].y -= fy
+      }
+      for (let i = 0; i < positions.length; i++) {
+        forces[i].x += (centerX - positions[i].x) * 0.0016
+        forces[i].y += (centerY - positions[i].y) * 0.0016
+        const length = Math.hypot(forces[i].x, forces[i].y)
+        const limit = length > 9 ? 9 / length : 1
+        positions[i].x = Math.max(24, Math.min(width - 24, positions[i].x + forces[i].x * limit))
+        positions[i].y = Math.max(24, Math.min(height - 24, positions[i].y + forces[i].y * limit))
+      }
+    }
+
+    return {
+      nodes,
+      edges,
+      points: nodes.map((character, index) => ({ character, x: positions[index].x, y: positions[index].y })),
+    }
   }, [shown])
 
   return (
@@ -170,7 +227,11 @@ export default function CharactersPanel(props: Props) {
         </div>
       ) : view === 'graph' ? (
         <div className="relation-wrap">
-          <p className="relation-hint">点第一个人，再点第二个人，填写关系；点连线可以修改或删除。</p>
+          <p className="relation-hint">
+            {selectedId
+              ? '已选中「' + (graph.nodes.find((item) => item.id === selectedId)?.name || '') + '」，再点另一个人建立关系'
+              : '点第一个人，再点第二个人，填写关系；点连线可以修改或删除。'}
+          </p>
           <svg className="relation-svg" viewBox="0 0 900 600">
             {graph.edges.map((edge) => {
               const a = graph.points.find((point) => point.character.id === edge.a.id)
@@ -210,13 +271,17 @@ export default function CharactersPanel(props: Props) {
                   }
                 }}
                 onDoubleClick={() => props.onOpen(point.character)}
+                onPointerEnter={(event) => setHover({ id: point.character.id, name: point.character.name, x: event.clientX, y: event.clientY })}
+                onPointerMove={(event) => setHover({ id: point.character.id, name: point.character.name, x: event.clientX, y: event.clientY })}
+                onPointerLeave={() => setHover(null)}
               >
                 <circle cx={point.x} cy={point.y} r={18} fill={point.character.color || '#a4552f'} />
                 <text x={point.x} y={point.y + 4} textAnchor="middle" className="relation-initial">{point.character.name.slice(0, 1)}</text>
-                {graph.nodes.length <= 40 ? <text x={point.x} y={point.y + 34} textAnchor="middle" className="relation-name">{point.character.name}</text> : null}
+                {graph.nodes.length <= 40 || selectedId === point.character.id || hover?.id === point.character.id ? <text x={point.x} y={point.y + 34} textAnchor="middle" className="relation-name">{point.character.name}</text> : null}
               </g>
             ))}
           </svg>
+          {hover ? <div className="relation-tooltip" style={{ left: hover.x + 14, top: hover.y + 14 }}>{hover.name}</div> : null}
           {shown.length > 80 ? <p className="setting-foot">只显示前 80 个，用搜索缩小范围后再连线。</p> : null}
           {!graph.edges.length ? <p className="setting-foot">还没有关系。点两个节点即可建立第一条关系。</p> : null}
 
