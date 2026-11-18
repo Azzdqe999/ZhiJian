@@ -16,6 +16,8 @@ type Props = {
   onEdit: (character: Character) => void
   onOpen: (character: Character) => void
   onDelete: (character: Character) => void
+  onRelate: (a: Character, b: Character, label: string) => void
+  onUnrelate: (a: Character, b: Character) => void
 }
 
 export default function CharactersPanel(props: Props) {
@@ -24,6 +26,8 @@ export default function CharactersPanel(props: Props) {
   const [kindFilter, setKindFilter] = useState<'all' | 'character' | 'place'>('all')
   const [collectionFilter, setCollectionFilter] = useState('all')
   const [view, setView] = useState<'grid' | 'graph'>('grid')
+  const [selectedId, setSelectedId] = useState('')
+  const [relationEditor, setRelationEditor] = useState<{ a: Character; b: Character; label: string } | null>(null)
 
   const collectionScopes = useMemo(() => {
     if (collectionFilter === 'all') return null
@@ -82,13 +86,8 @@ export default function CharactersPanel(props: Props) {
         if (!edgeMap.has(key)) edgeMap.set(key, { a: character, b: target, label: relation.label })
       }
     }
-    const linkedIds = new Set<string>()
-    for (const edge of edgeMap.values()) {
-      linkedIds.add(edge.a.id)
-      linkedIds.add(edge.b.id)
-    }
-    const nodes = linkedIds.size ? shown.filter((character) => linkedIds.has(character.id)) : shown.slice(0, 60)
-    const radius = Math.min(245, 120 + nodes.length * 5)
+    const nodes = shown.slice(0, 80)
+    const radius = Math.min(255, 100 + nodes.length * 4)
     const points = nodes.map((character, index) => {
       const angle = (Math.PI * 2 * index) / Math.max(1, nodes.length) - Math.PI / 2
       return { character, x: 450 + Math.cos(angle) * radius, y: 300 + Math.sin(angle) * radius }
@@ -171,6 +170,7 @@ export default function CharactersPanel(props: Props) {
         </div>
       ) : view === 'graph' ? (
         <div className="relation-wrap">
+          <p className="relation-hint">点第一个人，再点第二个人，填写关系；点连线可以修改或删除。</p>
           <svg className="relation-svg" viewBox="0 0 900 600">
             {graph.edges.map((edge) => {
               const a = graph.points.find((point) => point.character.id === edge.a.id)
@@ -179,6 +179,17 @@ export default function CharactersPanel(props: Props) {
               return (
                 <g key={edge.a.id + '-' + edge.b.id}>
                   <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} className="relation-line" />
+                  <line
+                    x1={a.x}
+                    y1={a.y}
+                    x2={b.x}
+                    y2={b.y}
+                    className="relation-line-hit"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      setRelationEditor({ a: edge.a, b: edge.b, label: edge.label })
+                    }}
+                  />
                   {graph.edges.length <= 18 ? (
                     <text x={(a.x + b.x) / 2} y={(a.y + b.y) / 2 - 4} className="relation-edge-label">{edge.label}</text>
                   ) : null}
@@ -186,14 +197,70 @@ export default function CharactersPanel(props: Props) {
               )
             })}
             {graph.points.map((point) => (
-              <g key={point.character.id} className="relation-node" onClick={() => props.onOpen(point.character)}>
+              <g
+                key={point.character.id}
+                className={'relation-node' + (selectedId === point.character.id ? ' is-selected' : '')}
+                onClick={() => {
+                  if (!selectedId) { setSelectedId(point.character.id); return }
+                  if (selectedId === point.character.id) { setSelectedId(''); return }
+                  const a = graph.nodes.find((item) => item.id === selectedId)
+                  if (a) {
+                    const existing = (a.relations || []).find((item) => item.name === point.character.name || point.character.aliases.includes(item.name))
+                    setRelationEditor({ a, b: point.character, label: existing?.label || '' })
+                  }
+                }}
+                onDoubleClick={() => props.onOpen(point.character)}
+              >
                 <circle cx={point.x} cy={point.y} r={18} fill={point.character.color || '#a4552f'} />
                 <text x={point.x} y={point.y + 4} textAnchor="middle" className="relation-initial">{point.character.name.slice(0, 1)}</text>
-                <text x={point.x} y={point.y + 34} textAnchor="middle" className="relation-name">{point.character.name}</text>
+                {graph.nodes.length <= 40 ? <text x={point.x} y={point.y + 34} textAnchor="middle" className="relation-name">{point.character.name}</text> : null}
               </g>
             ))}
           </svg>
-          {!graph.edges.length ? <p className="setting-foot">还没有关系。打开人物档案 → 编辑 → 关系，按「对象：关系」每行一条填写。</p> : null}
+          {shown.length > 80 ? <p className="setting-foot">只显示前 80 个，用搜索缩小范围后再连线。</p> : null}
+          {!graph.edges.length ? <p className="setting-foot">还没有关系。点两个节点即可建立第一条关系。</p> : null}
+
+          {relationEditor ? (
+            <div className="relation-editor-backdrop" onClick={() => setRelationEditor(null)}>
+              <div className="relation-editor" onClick={(event) => event.stopPropagation()}>
+                <div className="eyebrow">人物关系</div>
+                <h3>{relationEditor.a.name} ↔ {relationEditor.b.name}</h3>
+                <input
+                  autoFocus
+                  className="text-input"
+                  placeholder="关系，如：主从 / 盟友 / 母子"
+                  value={relationEditor.label}
+                  onChange={(event) => setRelationEditor({ ...relationEditor, label: event.target.value })}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && relationEditor.label.trim()) {
+                      props.onRelate(relationEditor.a, relationEditor.b, relationEditor.label.trim())
+                      setRelationEditor(null)
+                      setSelectedId('')
+                    }
+                  }}
+                />
+                <div className="modal-actions">
+                  {relationEditor.label.trim() ? (
+                    <button className="btn danger" onClick={() => {
+                      props.onUnrelate(relationEditor.a, relationEditor.b)
+                      setRelationEditor(null)
+                      setSelectedId('')
+                    }}>删除关系</button>
+                  ) : null}
+                  <button className="btn" onClick={() => setRelationEditor(null)}>取消</button>
+                  <button
+                    className="btn solid"
+                    disabled={!relationEditor.label.trim()}
+                    onClick={() => {
+                      props.onRelate(relationEditor.a, relationEditor.b, relationEditor.label.trim())
+                      setRelationEditor(null)
+                      setSelectedId('')
+                    }}
+                  >保存</button>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : (
         <div className="char-grid">

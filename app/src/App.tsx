@@ -1017,6 +1017,25 @@ function App() {
     return next
   }, [])
 
+  const relateCharacters = useCallback(async (a: Character, b: Character, label: string) => {
+    const link = (owner: Character, other: Character): Character => {
+      const kept = (owner.relations || []).filter((item) => item.name !== other.name && !other.aliases.includes(item.name))
+      return { ...owner, relations: [...kept, { name: other.name, label }], updatedAt: Date.now() }
+    }
+    await commitCharacter(link(a, b))
+    await commitCharacter(link(b, a))
+  }, [commitCharacter])
+
+  const unrelateCharacters = useCallback(async (a: Character, b: Character) => {
+    const cut = (owner: Character, other: Character): Character => ({
+      ...owner,
+      relations: (owner.relations || []).filter((item) => item.name !== other.name && !other.aliases.includes(item.name)),
+      updatedAt: Date.now(),
+    })
+    await commitCharacter(cut(a, b))
+    await commitCharacter(cut(b, a))
+  }, [commitCharacter])
+
   const addCharacterImages = useCallback(
     async (characterId: string, files: File[]) => {
       const accepted = files.filter(isImageFile)
@@ -1586,6 +1605,8 @@ function App() {
           onEdit={(character) => openCharacterEditor('edit', character)}
           onOpen={(character) => setProfileId(character.id)}
           onDelete={(character) => void deleteCharacterCard(character)}
+          onRelate={(a, b, label) => void relateCharacters(a, b, label)}
+          onUnrelate={(a, b) => void unrelateCharacters(a, b)}
         />
       ) : (
         <SettingsPanel
