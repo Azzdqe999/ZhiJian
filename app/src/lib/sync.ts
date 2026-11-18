@@ -1,4 +1,5 @@
 import {
+  getBook,
   getFile,
   getSyncConfig,
   listAllBookMaps,
@@ -374,6 +375,19 @@ async function applySnapshot(merged: SyncSnapshot): Promise<void> {
   for (const tomb of merged.tombstones) await putTombstone(tomb)
 }
 
+export async function applyConflictChoice(conflict: SyncConflict, choice: 'local' | 'remote'): Promise<void> {
+  const book = await getBook(conflict.bookId)
+  if (!book) return
+  const side = choice === 'local' ? conflict.local : conflict.remote
+  await putBook({
+    ...book,
+    chapterIndex: side.chapterIndex,
+    scrollRatio: side.scrollRatio,
+    epubCfi: side.epubCfi ?? book.epubCfi,
+    lastReadAt: Date.now(),
+  })
+}
+
 export type SyncResult = {
   books: number
   notes: number
@@ -385,6 +399,7 @@ export type SyncResult = {
   remotes: number
   registry: string[]
   conflicts: SyncConflict[]
+  devices: Array<{ id: string; exportedAt: number; current?: boolean }>
   at: number
 }
 
@@ -410,13 +425,19 @@ export async function syncNow(): Promise<SyncResult> {
   await putText(config, PREFIX + 'device-' + deviceId + '.json', JSON.stringify(local))
 
   const remotes: SyncSnapshot[] = []
+  const devices: Array<{ id: string; exportedAt: number; current?: boolean }> = [
+    { id: deviceId, exportedAt: Date.now(), current: true },
+  ]
   for (const id of registry) {
     if (id === deviceId) continue
     const text = await getText(config, PREFIX + 'device-' + id + '.json')
     if (!text) continue
     try {
       const parsed = JSON.parse(text) as SyncSnapshot
-      if (parsed && parsed.version === 1) remotes.push(parsed)
+      if (parsed && parsed.version === 1) {
+        remotes.push(parsed)
+        devices.push({ id, exportedAt: parsed.exportedAt || 0 })
+      }
     } catch {
       // ignore broken snapshot
     }
@@ -506,7 +527,7 @@ export async function syncNow(): Promise<SyncResult> {
   await saveSyncConfig({
     ...config,
     lastSyncAt: at,
-    lastSummary: { at, books: merged.books.length, uploaded, downloaded, skipped, conflicts: conflicts.slice(0, 20) },
+    lastSummary: { at, books: merged.books.length, uploaded, downloaded, skipped, conflicts: conflicts.slice(0, 20), devices },
   })
 
   return {
@@ -520,6 +541,7 @@ export async function syncNow(): Promise<SyncResult> {
     remotes: remotes.length,
     registry,
     conflicts,
+    devices,
     at,
   }
 }

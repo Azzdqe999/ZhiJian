@@ -14,7 +14,8 @@ import BrightnessEdge from './BrightnessEdge'
 import type { NoteEditorValues } from './NoteEditor'
 import { classifyEntity, extractCharacters, extractPlaces, loadAiConfig, summarizeChapter } from '../lib/ai'
 import { TtsPlayer, ttsSupported } from '../lib/tts'
-import { startAiBusy, stopAiBusy } from '../lib/ai-busy'
+import { isAiCancelled, startAiBusy, stopAiBusy } from '../lib/ai-busy'
+import AiEntityPreview from './AiEntityPreview'
 import { setVolumePaging } from '../lib/keys'
 import { buildTtsSegments } from '../lib/tts-text'
 import { listJumps, recordJump } from '../lib/jump-history'
@@ -302,6 +303,9 @@ export default function EpubReader(props: EpubReaderProps) {
   const [summaryBusy, setSummaryBusy] = useState(false)
   const [qaOpen, setQaOpen] = useState(false)
   const [qaContext, setQaContext] = useState('')
+  const [aiPreview, setAiPreview] = useState<{ kind: 'character' | 'place'; items: AiCharacter[] } | null>(null)
+  const [moreOpen, setMoreOpen] = useState(false)
+  const [chromeHidden, setChromeHidden] = useState(false)
 
   useEffect(() => {
     const onQa = () => {
@@ -336,7 +340,9 @@ export default function EpubReader(props: EpubReaderProps) {
       }
       const title = titleForHref(hrefRef.current, tocRef.current) || tocRef.current[indexRef.current]?.label || '本章'
       startAiBusy('AI 正在生成章节摘要')
-      setSummary(await summarizeChapter(config, title, text))
+      const result = await summarizeChapter(config, title, text)
+      if (isAiCancelled()) return
+      setSummary(result)
       stopAiBusy()
     } catch (error) {
       stopAiBusy()
@@ -345,6 +351,52 @@ export default function EpubReader(props: EpubReaderProps) {
       setSummaryBusy(false)
     }
   }
+
+  const runAiExtract = async (kind: 'character' | 'place') => {
+    if (aiBusy) return
+    const rendition = renditionRef.current
+    const text = rendition ? firstContents(rendition)?.document.body.innerText || '' : ''
+    if (text.trim().length < 20) {
+      props.onToast('这一章没有足够的文字')
+      return
+    }
+    setAiBusy(true)
+    startAiBusy(kind === 'place' ? 'AI 正在识别地名' : 'AI 正在识别人物')
+    try {
+      const config = await loadAiConfig()
+      if (!config.apiKey.trim() && config.provider !== 'ollama') {
+        stopAiBusy()
+        props.onToast('先在设置里配置 AI')
+        return
+      }
+      const knownCharacters = props.characters.filter((item) => (item.kind || 'character') !== 'place').flatMap((item) => [item.name, ...item.aliases])
+      const knownPlaces = props.characters.filter((item) => item.kind === 'place').flatMap((item) => [item.name, ...item.aliases])
+      const list = kind === 'place'
+        ? await extractPlaces(config, text, { bookTitle: book.title, knownCharacters })
+        : await extractCharacters(config, text, { bookTitle: book.title, knownPlaces })
+      if (isAiCancelled()) return
+      stopAiBusy()
+      if (!list.length) {
+        props.onToast(kind === 'place' ? 'AI 没有识别到地名' : 'AI 没有识别到人物')
+        return
+      }
+      setAiPreview({ kind, items: list })
+    } catch (error) {
+      stopAiBusy()
+      props.onToast('AI 失败：' + (error instanceof Error ? error.message : String(error)))
+    } finally {
+      setAiBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    const onRun = (event: Event) => {
+      const kind = (event as CustomEvent<{ kind?: string }>).detail?.kind
+      void runAiExtract(kind === 'place' ? 'place' : 'character')
+    }
+    window.addEventListener('paper:ai-run', onRun)
+    return () => window.removeEventListener('paper:ai-run', onRun)
+  }, [aiBusy, props.characters])
 
   useEffect(() => () => { playerRef.current.stop() }, [])
 
@@ -894,6 +946,7 @@ export default function EpubReader(props: EpubReaderProps) {
               if (current && !current.isCollapsed && current.toString().trim()) return
               const target = event.target as HTMLElement
               if (target.closest('a,button')) return
+              if (document.querySelector('.reader-top.is-hidden')) { setChromeHidden(false); return }
               const width = doc.defaultView?.innerWidth || doc.documentElement.clientWidth || 1
               const x = event.clientX
               if (x < width * 0.3) { scrollEpubPage(rendition, -1); return }
@@ -969,6 +1022,7 @@ export default function EpubReader(props: EpubReaderProps) {
         const max = Math.max(0, scrolling.scrollHeight - win.innerHeight)
         const value = max > 60 ? Math.min(1, Math.max(0, (win.scrollY || scrolling.scrollTop) / max)) : 0
         ratioRef.current = value
+        setChromeHidden((win.scrollY || scrolling.scrollTop) > 80)
         propsRef.current.onCharacterLeave()
         const now = Date.now()
         if (now - lastReportRef.current > 700) {
@@ -1320,95 +1374,27 @@ export default function EpubReader(props: EpubReaderProps) {
         if (!(event.target as HTMLElement).closest('.hl-toolbar')) setToolbar(null)
       }}
     >
-      <div className="reader-top">
+      <div className={'reader-top' + (chromeHidden ? ' is-hidden' : '')}>
         <button className="back" onClick={onBack}>← 书架</button>
         <button className="toc-btn" onClick={() => setDrawer(true)}>目录</button>
-        <button
-          className="toc-btn ai-action"
-          disabled={aiBusy}
-          onClick={() => {
-            if (aiBusy) return
-            setAiBusy(true)
-            void (async () => {
-              try {
-                const config = await loadAiConfig()
-                if (!config.apiKey.trim() && config.provider !== 'ollama') {
-                  props.onToast('先在设置里填写 AI Key')
-                  return
-                }
-                const contents = renditionRef.current ? firstContents(renditionRef.current) : null
-                const text = contents?.document?.body?.innerText ?? ''
-                if (text.trim().length < 20) {
-                  props.onToast('这一章没有足够的文字')
-                  return
-                }
-                startAiBusy('AI 正在抽取人物')
-                const knownPlaces = props.characters.filter((item) => item.kind === 'place').flatMap((item) => [item.name, ...item.aliases])
-                const list = await extractCharacters(config, text, { bookTitle: book.title, knownPlaces })
-                stopAiBusy()
-                if (!list.length) {
-                  props.onToast('AI 没有识别到人物')
-                  return
-                }
-                props.onAiCharacters(list, 'character')
-                props.onToast('AI 已加入 ' + list.length + ' 位人物')
-              } catch (error) {
-                stopAiBusy()
-                props.onToast('AI 失败：' + (error instanceof Error ? error.message : String(error)))
-              } finally {
-                setAiBusy(false)
-              }
-            })()
-          }}
-        >
-          {aiBusy ? 'AI…' : 'AI 人物'}
-        </button>
-        <button
-          className="toc-btn ai-action"
-          disabled={aiBusy}
-          onClick={() => {
-            if (aiBusy) return
-            setAiBusy(true)
-            void (async () => {
-              try {
-                const config = await loadAiConfig()
-                if (!config.apiKey.trim() && config.provider !== 'ollama') {
-                  props.onToast('先在设置里填写 AI Key')
-                  return
-                }
-                const contents = renditionRef.current ? firstContents(renditionRef.current) : null
-                const text = contents?.document?.body?.innerText ?? ''
-                if (text.trim().length < 20) {
-                  props.onToast('这一章没有足够的文字')
-                  return
-                }
-                startAiBusy('AI 正在抽取地名')
-                const knownCharacters = props.characters.filter((item) => (item.kind || 'character') !== 'place').flatMap((item) => [item.name, ...item.aliases])
-                const list = await extractPlaces(config, text, { bookTitle: book.title, knownCharacters })
-                stopAiBusy()
-                if (!list.length) {
-                  props.onToast('AI 没有识别到地名')
-                  return
-                }
-                props.onAiCharacters(list, 'place')
-                props.onToast('AI 已加入 ' + list.length + ' 个地名')
-              } catch (error) {
-                stopAiBusy()
-                props.onToast('AI 失败：' + (error instanceof Error ? error.message : String(error)))
-              } finally {
-                setAiBusy(false)
-              }
-            })()
-          }}
-        >
-          {aiBusy ? 'AI…' : 'AI 地名'}
-        </button>
-        <button className="toc-btn" onClick={props.onOpenMap}>地图</button>
-        {ttsSupported() ? <button className="toc-btn" onClick={() => void toggleSpeak()}>{speaking ? '停止' : '朗读'}</button> : null}
-        <button className="toc-btn" onClick={() => void showSummary()} disabled={summaryBusy}>{summaryBusy ? '摘要中…' : '摘要'}</button>
-        <button className="toc-btn sheet-trigger" onClick={props.onOpenSheet} title="阅读设置" aria-label="阅读设置">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
-        </button>
+        {ttsSupported() ? <button className="toc-btn reader-primary" onClick={() => void toggleSpeak()}>{speaking ? '停止' : '朗读'}</button> : null}
+        <div className="reader-more">
+          <button className="toc-btn" onClick={() => setMoreOpen((value) => !value)} aria-expanded={moreOpen}>更多</button>
+          {moreOpen ? (
+            <>
+              <div className="reader-more-backdrop" onClick={() => setMoreOpen(false)} />
+              <div className="reader-more-menu" role="menu">
+                <button onClick={() => { setMoreOpen(false); props.onOpenMap() }}>地图</button>
+                <button onClick={() => { setMoreOpen(false); void showSummary() }} disabled={summaryBusy}>{summaryBusy ? '摘要中…' : '章节摘要'}</button>
+                <button onClick={() => { setMoreOpen(false); props.onOpenSheet() }}>阅读设置</button>
+                <span className="reader-more-sep" />
+                <button disabled={aiBusy} onClick={() => { setMoreOpen(false); void runAiExtract('character') }}>识别人物</button>
+                <button disabled={aiBusy} onClick={() => { setMoreOpen(false); void runAiExtract('place') }}>识别地名</button>
+                <button onClick={() => { setMoreOpen(false); window.dispatchEvent(new Event('paper:qa')) }}>问书</button>
+              </div>
+            </>
+          ) : null}
+        </div>
         <div className="reader-progress"><span style={{ width: percent + '%' }} /></div>
       </div>
 
@@ -1672,6 +1658,19 @@ export default function EpubReader(props: EpubReaderProps) {
         onClose={() => setQaOpen(false)}
         onToast={props.onToast}
       />
+
+      {aiPreview ? (
+        <AiEntityPreview
+          kind={aiPreview.kind}
+          items={aiPreview.items}
+          onCancel={() => setAiPreview(null)}
+          onConfirm={(items) => {
+            props.onAiCharacters(items, aiPreview.kind)
+            props.onToast('已加入 ' + items.length + (aiPreview.kind === 'place' ? ' 个地名' : ' 位人物'))
+            setAiPreview(null)
+          }}
+        />
+      ) : null}
 
       {summary !== null && (
         <div className="summary-backdrop" onClick={() => setSummary(null)}>

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { cancelAiBusy } from '../lib/ai-busy'
 
 export default function AiBusyBar() {
   const [state, setState] = useState<{ label: string; startedAt: number } | null>(null)
@@ -37,6 +38,7 @@ export default function AiBusyBar() {
       <span>{state.label}</span>
       <span className="ai-busy-time">{seconds}s</span>
       <span className="ai-busy-hint">本地模型可能较慢，请稍候</span>
+      <button className="ai-busy-cancel" onClick={cancelAiBusy}>取消</button>
     </div>
   )
 }

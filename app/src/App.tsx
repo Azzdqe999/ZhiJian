@@ -75,7 +75,8 @@ import DuplicateModal from './components/DuplicateModal'
 import OpdsModal from './components/OpdsModal'
 import BrightnessEdge from './components/BrightnessEdge'
 import AiBusyBar from './components/AiBusyBar'
-import { startAiBusy, stopAiBusy } from './lib/ai-busy'
+import AiEntityPreview from './components/AiEntityPreview'
+import { isAiCancelled, startAiBusy, stopAiBusy } from './lib/ai-busy'
 import { searchLibrary } from './lib/search'
 import { TtsPlayer, ttsSupported } from './lib/tts'
 import { setVolumePaging } from './lib/keys'
@@ -271,10 +272,8 @@ function App() {
 
   useEffect(() => {
     const onAi = (event: Event) => {
-      const kind = (event as CustomEvent<{ kind?: string }>).detail?.kind
-      const buttons = document.querySelectorAll<HTMLButtonElement>('.ai-action')
-      const button = buttons[kind === 'place' ? 1 : 0]
-      button?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+      const detail = (event as CustomEvent<{ kind?: string }>).detail || {}
+      window.dispatchEvent(new CustomEvent('paper:ai-run', { detail }))
     }
     window.addEventListener('paper:ai', onAi)
     return () => window.removeEventListener('paper:ai', onAi)
@@ -1978,6 +1977,7 @@ function Shelf({ books, collections, collectionFilter, isSeries, onCollectionFil
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [seriesFilter, setSeriesFilter] = useState('all')
   const [sortBy, setSortBy] = useState<'recent' | 'title'>('recent')
+  const [toolsOpen, setToolsOpen] = useState(false)
   const seriesList = useMemo(
     () => [...new Set(books.map((book) => (book.series || '').trim()).filter(Boolean))].sort(),
     [books],
@@ -2029,17 +2029,23 @@ function Shelf({ books, collections, collectionFilter, isSeries, onCollectionFil
             <input placeholder="搜索书名、作者" value={query} onChange={(event) => setQuery(event.target.value)} />
           </label>
           <button className="btn" onClick={onImport}>导入</button>
-          <button className="btn" onClick={onFullSearch}>全文</button>
-          <button className="btn" onClick={onDuplicates}>查重</button>
-          <button className="btn" onClick={onOpds}>OPDS</button>
-          <button
-            className={'btn' + (selectMode ? ' solid' : '')}
-            onClick={() => { if (selectMode) exitSelect(); else setSelectMode(true) }}
-          >
-            {selectMode ? '取消多选' : '多选'}
-          </button>
+          <button className="btn" onClick={() => setToolsOpen(true)}>整理</button>
         </div>
       </header>
+
+      {toolsOpen ? (
+        <div className="modal-backdrop" onClick={() => setToolsOpen(false)}>
+          <div className="shelf-tools" onClick={(event) => event.stopPropagation()}>
+            <div className="eyebrow">书架整理</div>
+            <h2>想做什么？</h2>
+            <button onClick={() => { setToolsOpen(false); onFullSearch() }}>全文搜索 <span>在全部藏书中找一句话</span></button>
+            <button onClick={() => { setToolsOpen(false); onDuplicates() }}>检查重复 <span>按文件哈希和元数据找重复书</span></button>
+            <button onClick={() => { setToolsOpen(false); onOpds() }}>从 OPDS 导入 <span>从 Calibre/COPS 目录取书</span></button>
+            <button onClick={() => { setToolsOpen(false); setSelectMode(true) }}>多选管理 <span>批量加入收藏夹或删除</span></button>
+            <button className="shelf-tools-cancel" onClick={() => setToolsOpen(false)}>取消</button>
+          </div>
+        </div>
+      ) : null}
 
       <div className="filter-bar">
         <span className="filter-label">收藏夹</span>
@@ -2257,6 +2263,10 @@ function Reader({
   const [summary, setSummary] = useState<string | null>(null)
   const [summaryBusy, setSummaryBusy] = useState(false)
   const [qaOpen, setQaOpen] = useState(false)
+  const [aiBusy, setAiBusy] = useState(false)
+  const [aiPreview, setAiPreview] = useState<{ kind: 'character' | 'place'; items: AiCharacter[] } | null>(null)
+  const [moreOpen, setMoreOpen] = useState(false)
+  const [chromeHidden, setChromeHidden] = useState(false)
 
   useEffect(() => {
     const onQa = () => {
@@ -2286,6 +2296,51 @@ function Reader({
       setSummaryBusy(false)
     }
   }
+
+  const runAiExtract = async (kind: 'character' | 'place') => {
+    if (aiBusy || !chapter) return
+    setAiBusy(true)
+    startAiBusy(kind === 'place' ? 'AI 正在识别地名' : 'AI 正在识别人物')
+    try {
+      const config = await loadAiConfig()
+      if (!config.apiKey.trim() && config.provider !== 'ollama') {
+        stopAiBusy()
+        onToast('先在设置里配置 AI')
+        return
+      }
+      if (chapter.text.trim().length < 20) {
+        stopAiBusy()
+        onToast('这一章没有足够的文字')
+        return
+      }
+      const knownCharacters = characters.filter((item) => (item.kind || 'character') !== 'place').flatMap((item) => [item.name, ...item.aliases])
+      const knownPlaces = characters.filter((item) => item.kind === 'place').flatMap((item) => [item.name, ...item.aliases])
+      const list = kind === 'place'
+        ? await extractPlaces(config, chapter.text, { bookTitle: book.title, chapterTitle: chapter.title, knownCharacters })
+        : await extractCharacters(config, chapter.text, { bookTitle: book.title, chapterTitle: chapter.title, knownPlaces })
+      if (isAiCancelled()) return
+      stopAiBusy()
+      if (!list.length) {
+        onToast(kind === 'place' ? 'AI 没有识别到地名' : 'AI 没有识别到人物')
+        return
+      }
+      setAiPreview({ kind, items: list })
+    } catch (error) {
+      stopAiBusy()
+      onToast('AI 失败：' + (error instanceof Error ? error.message : String(error)))
+    } finally {
+      setAiBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    const onRun = (event: Event) => {
+      const kind = (event as CustomEvent<{ kind?: string }>).detail?.kind
+      void runAiExtract(kind === 'place' ? 'place' : 'character')
+    }
+    window.addEventListener('paper:ai-run', onRun)
+    return () => window.removeEventListener('paper:ai-run', onRun)
+  }, [aiBusy, chapter, characters])
 
   useEffect(() => () => { playerRef.current.stop() }, [])
 
@@ -2471,7 +2526,6 @@ function Reader({
       document.removeEventListener('selectionchange', onSelectionChange)
     }
   }, [selection, drawer])
-  const [aiBusy, setAiBusy] = useState(false)
 
   const pageRef = useRef<HTMLElement | null>(null)
   const flowRef = useRef<HTMLDivElement | null>(null)
@@ -2711,6 +2765,7 @@ function Reader({
     const position = paged ? element.scrollLeft : element.scrollTop
     const value = max > 60 ? Math.min(1, Math.max(0, position / max)) : 0
     ratioRef.current = value
+    if (!paged) setChromeHidden(element.scrollTop > 80)
     setSelection(null)
     onCharacterLeave()
     const now = Date.now()
@@ -2728,101 +2783,27 @@ function Reader({
         if (!(event.target as HTMLElement).closest('.txt-toolbar')) setSelection(null)
       }}
     >
-      <div className="reader-top">
+      <div className={'reader-top' + (chromeHidden ? ' is-hidden' : '')}>
         <button className="back" onClick={onBack}>← 书架</button>
         <button className="toc-btn" onClick={() => setDrawer(true)}>目录</button>
-        <button
-          className="toc-btn ai-action"
-          disabled={aiBusy}
-          onClick={() => {
-            if (aiBusy || !chapter) return
-            setAiBusy(true)
-            void (async () => {
-              try {
-                const config = await loadAiConfig()
-                if (!config.apiKey.trim() && config.provider !== 'ollama') {
-                  onToast('先在设置里填写 AI Key')
-                  return
-                }
-                if (chapter.text.trim().length < 20) {
-                  onToast('这一章没有足够的文字')
-                  return
-                }
-                startAiBusy('AI 正在抽取人物')
-                const knownCharacters = characters.filter((item) => (item.kind || 'character') !== 'place').flatMap((item) => [item.name, ...item.aliases])
-                const knownPlaces = characters.filter((item) => item.kind === 'place').flatMap((item) => [item.name, ...item.aliases])
-                const list = await extractCharacters(config, chapter.text, {
-                  bookTitle: book.title,
-                  chapterTitle: chapter.title,
-                  knownPlaces,
-                })
-                stopAiBusy()
-                if (!list.length) {
-                  onToast('AI 没有识别到人物')
-                  return
-                }
-                onAiCharacters(list, 'character')
-                onToast('AI 已加入 ' + list.length + ' 位人物')
-              } catch (error) {
-                stopAiBusy()
-                onToast('AI 失败：' + (error instanceof Error ? error.message : String(error)))
-              } finally {
-                setAiBusy(false)
-              }
-            })()
-          }}
-        >
-          {aiBusy ? 'AI…' : 'AI 人物'}
-        </button>
-        <button
-          className="toc-btn ai-action"
-          disabled={aiBusy}
-          onClick={() => {
-            if (aiBusy || !chapter) return
-            setAiBusy(true)
-            void (async () => {
-              try {
-                const config = await loadAiConfig()
-                if (!config.apiKey.trim() && config.provider !== 'ollama') {
-                  onToast('先在设置里填写 AI Key')
-                  return
-                }
-                if (chapter.text.trim().length < 20) {
-                  onToast('这一章没有足够的文字')
-                  return
-                }
-                startAiBusy('AI 正在抽取地名')
-                const knownCharacters = characters.filter((item) => (item.kind || 'character') !== 'place').flatMap((item) => [item.name, ...item.aliases])
-                const knownPlaces = characters.filter((item) => item.kind === 'place').flatMap((item) => [item.name, ...item.aliases])
-                const list = await extractPlaces(config, chapter.text, {
-                  bookTitle: book.title,
-                  chapterTitle: chapter.title,
-                  knownCharacters,
-                })
-                stopAiBusy()
-                if (!list.length) {
-                  onToast('AI 没有识别到地名')
-                  return
-                }
-                onAiCharacters(list, 'place')
-                onToast('AI 已加入 ' + list.length + ' 个地名')
-              } catch (error) {
-                stopAiBusy()
-                onToast('AI 失败：' + (error instanceof Error ? error.message : String(error)))
-              } finally {
-                setAiBusy(false)
-              }
-            })()
-          }}
-        >
-          {aiBusy ? 'AI…' : 'AI 地名'}
-        </button>
-        <button className="toc-btn" onClick={onOpenMap}>地图</button>
-        {ttsSupported() ? <button className="toc-btn" onClick={() => void toggleSpeak()}>{speaking ? '停止' : '朗读'}</button> : null}
-        <button className="toc-btn" onClick={() => void showSummary()} disabled={summaryBusy}>{summaryBusy ? '摘要中…' : '摘要'}</button>
-        <button className="toc-btn sheet-trigger" onClick={onOpenSheet} title="阅读设置" aria-label="阅读设置">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
-        </button>
+        {ttsSupported() ? <button className="toc-btn reader-primary" onClick={() => void toggleSpeak()}>{speaking ? '停止' : '朗读'}</button> : null}
+        <div className="reader-more">
+          <button className="toc-btn" onClick={() => setMoreOpen((value) => !value)} aria-expanded={moreOpen}>更多</button>
+          {moreOpen ? (
+            <>
+              <div className="reader-more-backdrop" onClick={() => setMoreOpen(false)} />
+              <div className="reader-more-menu" role="menu">
+                <button onClick={() => { setMoreOpen(false); onOpenMap() }}>地图</button>
+                <button onClick={() => { setMoreOpen(false); void showSummary() }} disabled={summaryBusy}>{summaryBusy ? '摘要中…' : '章节摘要'}</button>
+                <button onClick={() => { setMoreOpen(false); onOpenSheet() }}>阅读设置</button>
+                <span className="reader-more-sep" />
+                <button disabled={aiBusy} onClick={() => { setMoreOpen(false); void runAiExtract('character') }}>识别人物</button>
+                <button disabled={aiBusy} onClick={() => { setMoreOpen(false); void runAiExtract('place') }}>识别地名</button>
+                <button onClick={() => { setMoreOpen(false); setQaOpen(true) }}>问书</button>
+              </div>
+            </>
+          ) : null}
+        </div>
         <div className="reader-progress"><span style={{ width: percent + '%' }} /></div>
       </div>
 
@@ -2834,6 +2815,7 @@ function Reader({
         onMouseUp={captureSelection}
         onClick={(event) => {
           if (window.innerWidth > 760) return
+          if (chromeHidden) { setChromeHidden(false); return }
           if (window.getSelection()?.toString().trim()) return
           const target = event.target as HTMLElement
           if (target.closest('a,button,.char,.txt-toolbar')) return
@@ -2936,6 +2918,19 @@ function Reader({
         onToast={onToast}
       />
 
+      {aiPreview ? (
+        <AiEntityPreview
+          kind={aiPreview.kind}
+          items={aiPreview.items}
+          onCancel={() => setAiPreview(null)}
+          onConfirm={(items) => {
+            onAiCharacters(items, aiPreview.kind)
+            onToast('已加入 ' + items.length + (aiPreview.kind === 'place' ? ' 个地名' : ' 位人物'))
+            setAiPreview(null)
+          }}
+        />
+      ) : null}
+
       {summary !== null && (
         <div className="summary-backdrop" onClick={() => setSummary(null)}>
           <div className="summary-card" onClick={(event) => event.stopPropagation()}>
@@ -2980,8 +2975,8 @@ function Reader({
         </div>
       )}
 
-      <footer className="reader-foot">
-        <span>第 {index + 1} / {book.chapterCount} 章</span>
+      <footer className={'reader-foot' + (chromeHidden ? ' is-hidden' : '')}>
+        <span>第 {index + 1} / {book.chapterCount} 章 · {percent}%</span>
         <span className="foot-hint">{book.title} · 共 {formatWords(book.charCount)}</span>
         <span>{book.author}</span>
       </footer>

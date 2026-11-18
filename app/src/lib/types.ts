@@ -100,6 +100,7 @@ export type SyncConfig = {
     downloaded: number
     skipped: number
     conflicts?: SyncConflict[]
+    devices?: Array<{ id: string; exportedAt: number; current?: boolean }>
   }
 }
 

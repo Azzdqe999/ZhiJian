@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import type { AiConfig, BookMeta, FontFamily, SyncConfig, Theme } from '../lib/types'
+import type { AiConfig, BookMeta, FontFamily, SyncConfig, SyncConflict, Theme } from '../lib/types'
 import { FONT_OPTIONS } from '../lib/fonts'
 import { deleteBook, getSyncConfig, listTrashedBooks, restoreBook, saveSyncConfig } from '../lib/store'
-import { syncNow, testConnection } from '../lib/sync'
+import { applyConflictChoice, syncNow, testConnection } from '../lib/sync'
 import { AI_MODELS, AI_PRESETS, EMPTY_AI, listAiModels, loadAiConfig, persistAiConfig, testAi } from '../lib/ai'
 import { checkForUpdate, getAppVersion, installUpdate, isNativeUpdater } from '../lib/updater'
 import { downloadBlob, exportBackup, importBackup } from '../lib/backup'
@@ -85,6 +85,20 @@ export default function SettingsPanel(props: Props) {
     await reloadTrash()
     await props.onSynced?.()
     props.onToast?.('已彻底删除')
+  }
+
+  const chooseConflict = async (conflict: SyncConflict, choice: 'local' | 'remote') => {
+    await applyConflictChoice(conflict, choice)
+    const next: SyncConfig = {
+      ...sync,
+      lastSummary: sync.lastSummary
+        ? { ...sync.lastSummary, conflicts: (sync.lastSummary.conflicts || []).filter((item) => item.bookId !== conflict.bookId) }
+        : sync.lastSummary,
+    }
+    setSync(next)
+    await saveSyncConfig(next)
+    props.onToast?.('已保留' + (choice === 'local' ? '本地进度' : '远程进度') + '，下次同步生效')
+    await props.onSynced?.()
   }
 
   const onToggleTop = async () => {
@@ -523,10 +537,24 @@ export default function SettingsPanel(props: Props) {
                 <span className="sync-conflict-book">{conflict.title}</span>
                 <span>本地 第 {conflict.local.chapterIndex + 1} 章</span>
                 <span>远程 第 {conflict.remote.chapterIndex + 1} 章</span>
-                <span className="sync-conflict-choice">已保留{conflict.chosen === 'local' ? '本地' : '远程'}</span>
+                <span className="sync-conflict-actions">
+                  <button className="btn small" onClick={() => void chooseConflict(conflict, 'local')}>用本地</button>
+                  <button className="btn small" onClick={() => void chooseConflict(conflict, 'remote')}>用远程</button>
+                </span>
               </div>
             ))}
-            <p className="setting-foot">当前按最近阅读时间保留；担心覆盖可先导出备份。</p>
+            <p className="setting-foot">选择会写入本机，并在下次同步时作为最新进度；担心覆盖可先导出备份。</p>
+          </div>
+        ) : null}
+        {sync.lastSummary?.devices?.length ? (
+          <div className="sync-devices">
+            <div className="sync-conflicts-title">设备 · {sync.lastSummary.devices.length}</div>
+            {sync.lastSummary.devices.map((device) => (
+              <div className="sync-device-row" key={device.id}>
+                <span>{device.current ? '本机' : device.id.slice(0, 10)}</span>
+                <span>{device.exportedAt ? new Date(device.exportedAt).toLocaleString() : '未同步'}</span>
+              </div>
+            ))}
           </div>
         ) : null}
       </section>
