@@ -13,6 +13,7 @@ type EdgeBridge = {
 type Handlers = {
   onSegment?: (index: number) => void
   onTime?: (current: number, duration: number) => void
+  onNotice?: (message: string) => void
   onDone?: () => void
   onError?: (error: Error) => void
 }
@@ -61,12 +62,12 @@ async function synthesizeEdgeOnce(text: string, rate: number): Promise<HTMLAudio
 }
 
 async function synthesizeEdge(text: string, rate: number): Promise<HTMLAudioElement | null> {
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 4; attempt++) {
     try {
       return await synthesizeEdgeOnce(text, rate)
     } catch (error) {
       console.warn('Edge TTS 合成失败，重试', attempt + 1, error)
-      await new Promise((resolve) => window.setTimeout(resolve, 500 + attempt * 700))
+      await new Promise((resolve) => window.setTimeout(resolve, 600 + attempt * 900))
     }
   }
   return null
@@ -137,12 +138,12 @@ export class TtsPlayer {
             try {
               await playAudio(audio)
             } catch (error) {
-              console.warn('Edge TTS 播放失败，回退系统语音', error)
-              await speakWeb(text, rate)
+              console.warn('Edge TTS 播放失败，跳过该段', error)
+              handlers.onNotice?.('这一段播放失败，已跳过')
             }
           } else {
-            console.warn('Edge TTS 无音频，回退系统语音')
-            await speakWeb(text, rate)
+            console.warn('Edge TTS 无音频，跳过该段')
+            handlers.onNotice?.('这一段合成失败，已跳过')
           }
         }
         if (!this.stopped && run === this.sequence) handlers.onDone?.()

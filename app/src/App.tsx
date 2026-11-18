@@ -2195,6 +2195,7 @@ function Reader({
     void playerRef.current.play(segments.map((item) => item.text), start, rate, {
       onSegment: (value) => { setTtsIndex(value); setTtsTime({ current: 0, duration: 0 }) },
       onTime: (current, duration) => setTtsTime({ current, duration }),
+      onNotice: onToast,
       onDone: () => setSpeaking(false),
       onError: (error) => {
         setSpeaking(false)

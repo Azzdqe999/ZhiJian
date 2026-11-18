@@ -259,6 +259,8 @@ export default function EpubReader(props: EpubReaderProps) {
   const [ttsTime, setTtsTime] = useState({ current: 0, duration: 0 })
   const [ttsScrub, setTtsScrub] = useState<number | null>(null)
   const [ttsRate, setTtsRate] = useState(0.9)
+  const ttsParaRef = useRef(0)
+  const ttsSpeakingRef = useRef(false)
   const [ttsVolume, setTtsVolume] = useState(() => {
     const saved = Number(localStorage.getItem('paper-tts-volume'))
     return Number.isFinite(saved) && saved > 0 ? saved : 0.9
@@ -330,6 +332,8 @@ export default function EpubReader(props: EpubReaderProps) {
     setTtsIndex(start)
     setTtsTotal(segments.length)
     setTtsTime({ current: 0, duration: 0 })
+    ttsSpeakingRef.current = true
+    ttsParaRef.current = segments[start]?.para ?? 0
     setSpeaking(true)
     playerRef.current.setVolume(ttsVolume)
     void playerRef.current.play(segments.map((item) => item.text), start, rate, {
@@ -340,25 +344,30 @@ export default function EpubReader(props: EpubReaderProps) {
           current.classList.add('paper-tts-active')
           current.scrollIntoView({ block: 'center', behavior: 'smooth' })
         }
+        ttsParaRef.current = segments[value]?.para ?? 0
         setTtsIndex(value)
         setTtsTime({ current: 0, duration: 0 })
       },
       onTime: (current, duration) => setTtsTime({ current, duration }),
       onDone: () => {
+        ttsSpeakingRef.current = false
         rows.forEach((row) => row.classList.remove('paper-tts-active'))
         setSpeaking(false)
       },
       onError: (error) => {
+        ttsSpeakingRef.current = false
         rows.forEach((row) => row.classList.remove('paper-tts-active'))
         setSpeaking(false)
         props.onToast('朗读失败：' + error.message)
       },
+      onNotice: (message) => props.onToast(message),
     })
   }
 
   const toggleSpeak = () => {
     if (speaking) {
       playerRef.current.stop()
+      ttsSpeakingRef.current = false
       const rendition = renditionRef.current
       const contents = rendition ? firstContents(rendition) : null
       contents?.document.querySelectorAll('.paper-tts-active').forEach((row) => row.classList.remove('paper-tts-active'))
@@ -672,6 +681,22 @@ export default function EpubReader(props: EpubReaderProps) {
       rendition.on('rendered', () => {
         const contents = firstContents(rendition)
         if (!contents) return
+        if (ttsSpeakingRef.current) {
+          try {
+            const doc = contents.document
+            if (!doc.getElementById('paper-tts-style')) {
+              const style = doc.createElement('style')
+              style.id = 'paper-tts-style'
+              style.textContent = '.paper-tts-active{background:rgba(164,85,47,.14)!important;box-shadow:inset 3px 0 0 #A4552F;border-radius:4px}'
+              doc.head.appendChild(style)
+            }
+            const rows = Array.from(doc.body.querySelectorAll('p'))
+            rows.forEach((row) => row.classList.remove('paper-tts-active'))
+            rows[ttsParaRef.current]?.classList.add('paper-tts-active')
+          } catch {
+            /* 重排后恢复高亮失败不影响朗读 */
+          }
+        }
         bindScroll(contents)
         bindCharacterHover(contents)
         try {
