@@ -6,49 +6,78 @@ type TtsBridge = {
   isAvailable: () => Promise<{ available: boolean }>
 }
 
-const Tts = registerPlugin<TtsBridge>('Tts')
-
-function chunks(text: string, size = 2200): string[] {
-  const clean = text.replace(/\r/g, '').trim()
-  if (!clean) return []
-  const out: string[] = []
-  let rest = clean
-  while (rest.length > size) {
-    let cut = rest.lastIndexOf('\n', size)
-    if (cut < size * 0.5) cut = Math.max(rest.lastIndexOf('。', size), rest.lastIndexOf('！', size), rest.lastIndexOf('？', size))
-    if (cut < size * 0.5) cut = size
-    out.push(rest.slice(0, cut + 1))
-    rest = rest.slice(cut + 1)
-  }
-  if (rest.trim()) out.push(rest)
-  return out
+type Handlers = {
+  onSegment?: (index: number) => void
+  onDone?: () => void
+  onError?: (error: Error) => void
 }
+
+const Tts = registerPlugin<TtsBridge>('Tts')
+let current: TtsPlayer | null = null
 
 export function ttsSupported(): boolean {
   return (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') || (typeof window !== 'undefined' && 'speechSynthesis' in window)
 }
 
-export async function speakTts(text: string, rate = 1): Promise<void> {
-  const parts = chunks(text)
-  if (!parts.length) throw new Error('没有可朗读的文字')
-  if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
-    await Tts.stop()
-    for (const part of parts) await Tts.speak({ text: part, rate })
-    return
-  }
-  if (!('speechSynthesis' in window)) throw new Error('当前环境不支持朗读')
-  window.speechSynthesis.cancel()
-  for (const part of parts) {
-    const utterance = new SpeechSynthesisUtterance(part)
+function speakWeb(text: string, rate: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const utterance = new SpeechSynthesisUtterance(text)
     utterance.lang = 'zh-CN'
     utterance.rate = rate
+    utterance.onend = () => resolve()
+    utterance.onerror = (event) => reject(new Error(String(event.error || '朗读失败')))
     window.speechSynthesis.speak(utterance)
+  })
+}
+
+export class TtsPlayer {
+  private stopped = true
+  private sequence = 0
+
+  get active(): boolean {
+    return !this.stopped
+  }
+
+  async play(segments: string[], start: number, rate: number, handlers: Handlers = {}): Promise<void> {
+    current?.stop()
+    current = this
+    this.stopped = false
+    const run = ++this.sequence
+    try {
+      for (let index = Math.max(0, start); index < segments.length; index++) {
+        if (this.stopped || run !== this.sequence) return
+        const text = segments[index].trim()
+        if (!text) continue
+        handlers.onSegment?.(index)
+        if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
+          await Tts.speak({ text, rate })
+        } else {
+          await speakWeb(text, rate)
+        }
+      }
+      if (!this.stopped && run === this.sequence) handlers.onDone?.()
+    } catch (error) {
+      if (!this.stopped && run === this.sequence) handlers.onError?.(error instanceof Error ? error : new Error(String(error)))
+    } finally {
+      if (run === this.sequence) {
+        this.stopped = true
+        if (current === this) current = null
+      }
+    }
+  }
+
+  stop(): void {
+    this.stopped = true
+    this.sequence += 1
+    if (current === this) current = null
+    if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
+      void Tts.stop().catch(() => {})
+    }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) window.speechSynthesis.cancel()
   }
 }
 
 export async function stopTts(): Promise<void> {
-  if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
-    try { await Tts.stop() } catch { /* 插件不可用时忽略 */ }
-  }
-  if (typeof window !== 'undefined' && 'speechSynthesis' in window) window.speechSynthesis.cancel()
+  current?.stop()
+  current = null
 }

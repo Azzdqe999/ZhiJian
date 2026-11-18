@@ -11,7 +11,7 @@ import type { Bookmark, BookMeta, Character, FontFamily, Note, NoteColor, Theme 
 import NoteEditor from './NoteEditor'
 import type { NoteEditorValues } from './NoteEditor'
 import { extractCharacters, extractPlaces, loadAiConfig, summarizeChapter } from '../lib/ai'
-import { speakTts, stopTts, ttsSupported } from '../lib/tts'
+import { TtsPlayer, ttsSupported } from '../lib/tts'
 import type { AiCharacter } from '../lib/ai'
 
 type TocRow = { label: string; href: string; level: number }
@@ -22,6 +22,7 @@ type ToolbarState = {
   left: number
   top: number
   chapterTitle: string
+  paraIndex: number
 }
 
 type EditorState = {
@@ -209,6 +210,9 @@ export default function EpubReader(props: EpubReaderProps) {
   const [currentIndex, setCurrentIndex] = useState(book.chapterIndex || 0)
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
   const [speaking, setSpeaking] = useState(false)
+  const [ttsIndex, setTtsIndex] = useState(0)
+  const [ttsRate, setTtsRate] = useState(1)
+  const playerRef = useRef(new TtsPlayer())
   const [summary, setSummary] = useState<string | null>(null)
   const [summaryBusy, setSummaryBusy] = useState(false)
 
@@ -237,28 +241,72 @@ export default function EpubReader(props: EpubReaderProps) {
     }
   }
 
-  useEffect(() => () => { void stopTts() }, [])
+  useEffect(() => () => { playerRef.current.stop() }, [])
 
-  const toggleSpeak = async () => {
-    if (speaking) {
-      await stopTts()
-      setSpeaking(false)
-      return
-    }
+  const startTts = (from: number, rate = ttsRate) => {
     const rendition = renditionRef.current
-    const text = rendition ? firstContents(rendition)?.document.body.innerText || '' : ''
-    if (!text.trim()) {
+    const contents = rendition ? firstContents(rendition) : null
+    if (!contents) {
       props.onToast('这一页还没有可朗读的文字')
       return
     }
-    try {
-      setSpeaking(true)
-      await speakTts(text, 1)
-      props.onToast('开始朗读')
-    } catch (error) {
-      setSpeaking(false)
-      props.onToast('朗读失败：' + (error instanceof Error ? error.message : String(error)))
+    const doc = contents.document
+    const rows = Array.from(doc.body.querySelectorAll('p')).filter((row) => (row.textContent || '').trim().length > 0)
+    if (!rows.length) {
+      props.onToast('这一页还没有可朗读的文字')
+      return
     }
+    const start = Math.max(0, Math.min(rows.length - 1, from))
+    const segments = rows.map((row) => (row.textContent || '').trim())
+    rows.forEach((row) => row.classList.remove('paper-tts-active'))
+    const styleId = 'paper-tts-style'
+    if (!doc.getElementById(styleId)) {
+      const style = doc.createElement('style')
+      style.id = styleId
+      style.textContent = '.paper-tts-active{background:rgba(164,85,47,.14)!important;box-shadow:inset 3px 0 0 #A4552F;border-radius:4px}'
+      doc.head.appendChild(style)
+    }
+    setTtsIndex(start)
+    setSpeaking(true)
+    void playerRef.current.play(segments, start, rate, {
+      onSegment: (value) => {
+        rows.forEach((row) => row.classList.remove('paper-tts-active'))
+        const current = rows[value]
+        if (current) {
+          current.classList.add('paper-tts-active')
+          current.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        }
+        setTtsIndex(value)
+      },
+      onDone: () => {
+        rows.forEach((row) => row.classList.remove('paper-tts-active'))
+        setSpeaking(false)
+      },
+      onError: (error) => {
+        rows.forEach((row) => row.classList.remove('paper-tts-active'))
+        setSpeaking(false)
+        props.onToast('朗读失败：' + error.message)
+      },
+    })
+  }
+
+  const toggleSpeak = () => {
+    if (speaking) {
+      playerRef.current.stop()
+      const rendition = renditionRef.current
+      const contents = rendition ? firstContents(rendition) : null
+      contents?.document.querySelectorAll('.paper-tts-active').forEach((row) => row.classList.remove('paper-tts-active'))
+      setSpeaking(false)
+      return
+    }
+    startTts(0)
+  }
+
+  const changeTtsRate = () => {
+    const options = [0.8, 1, 1.2, 1.5]
+    const next = options[(options.indexOf(ttsRate) + 1) % options.length]
+    setTtsRate(next)
+    if (speaking) startTts(ttsIndex, next)
   }
 
   useEffect(() => {
@@ -606,12 +654,18 @@ export default function EpubReader(props: EpubReaderProps) {
           const left = Math.max(10, Math.min(window.innerWidth - width - 10, frameRect.left + rect.left + rect.width / 2 - width / 2))
           let top = frameRect.top + rect.bottom + 10
           if (top + 54 > window.innerHeight - 10) top = Math.max(10, frameRect.top + rect.top - 56)
+          const paragraphs = Array.from(contents.document.body.querySelectorAll('p'))
+          const node = range.startContainer
+          const holder = node.nodeType === Node.ELEMENT_NODE ? (node as HTMLElement) : node.parentElement
+          const paragraph = holder?.closest('p') || null
+          const paraIndex = paragraph ? Math.max(0, paragraphs.indexOf(paragraph)) : 0
           setToolbar({
             cfiRange,
             text,
             left,
             top,
             chapterTitle: titleForHref(hrefRef.current, tocRef.current) || tocRef.current[indexRef.current]?.label || '正文',
+            paraIndex,
           })
         } catch {
           /* 选中内容解析失败时忽略 */
@@ -1146,9 +1200,20 @@ export default function EpubReader(props: EpubReaderProps) {
           >
             标为人物
           </button>
+          <button className="hl-action" onClick={() => { const index = toolbar.paraIndex; setToolbar(null); startTts(index) }}>
+            从这里朗读
+          </button>
           <button className="hl-close" onClick={() => setToolbar(null)} title="关闭">×</button>
         </div>
       )}
+
+      {speaking ? (
+        <div className="tts-bar">
+          <span>朗读 {ttsIndex + 1}</span>
+          <button className="tts-chip" onClick={changeTtsRate}>{ttsRate}×</button>
+          <button className="tts-chip" onClick={toggleSpeak}>停止</button>
+        </div>
+      ) : null}
 
       {drawer && (
         <>

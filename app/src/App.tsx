@@ -71,7 +71,7 @@ import CharactersPanel from './components/CharactersPanel'
 import MapViewer from './components/MapViewer'
 import ReaderSheet from './components/ReaderSheet'
 import { searchLibrary } from './lib/search'
-import { speakTts, stopTts, ttsSupported } from './lib/tts'
+import { TtsPlayer, ttsSupported } from './lib/tts'
 import type { SearchHit } from './lib/search'
 import CharacterDrawer from './components/CharacterDrawer'
 import CharacterCard from './components/CharacterCard'
@@ -2143,9 +2143,12 @@ function Reader({
   const [drawer, setDrawer] = useState(false)
   const [ratio, setRatio] = useState(book.scrollRatio || 0)
   const [attempt, setAttempt] = useState(0)
-  const [selection, setSelection] = useState<{ text: string; left: number; top: number } | null>(null)
+  const [selection, setSelection] = useState<{ text: string; left: number; top: number; para: number } | null>(null)
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
   const [speaking, setSpeaking] = useState(false)
+  const [ttsIndex, setTtsIndex] = useState(0)
+  const [ttsRate, setTtsRate] = useState(1)
+  const playerRef = useRef(new TtsPlayer())
   const [summary, setSummary] = useState<string | null>(null)
   const [summaryBusy, setSummaryBusy] = useState(false)
 
@@ -2166,23 +2169,45 @@ function Reader({
     }
   }
 
-  useEffect(() => () => { void stopTts() }, [])
+  useEffect(() => () => { playerRef.current.stop() }, [])
 
-  const toggleSpeak = async () => {
+  const startTts = (from: number, rate = ttsRate) => {
+    const segments = chapter ? toParagraphs(chapter.text) : []
+    if (!segments.length) return
+    const start = Math.max(0, Math.min(segments.length - 1, from))
+    setTtsIndex(start)
+    setSpeaking(true)
+    void playerRef.current.play(segments, start, rate, {
+      onSegment: (value) => setTtsIndex(value),
+      onDone: () => setSpeaking(false),
+      onError: (error) => {
+        setSpeaking(false)
+        onToast('朗读失败：' + error.message)
+      },
+    })
+  }
+
+  const toggleSpeak = () => {
     if (speaking) {
-      await stopTts()
+      playerRef.current.stop()
       setSpeaking(false)
       return
     }
-    if (!chapter) return
-    try {
-      setSpeaking(true)
-      await speakTts(chapter.text, 1)
-      onToast('开始朗读')
-    } catch (error) {
-      setSpeaking(false)
-      onToast('朗读失败：' + (error instanceof Error ? error.message : String(error)))
-    }
+    startTts(0)
+  }
+
+  useEffect(() => {
+    if (!speaking) return
+    const rows = pageRef.current?.querySelectorAll('p')
+    const target = rows?.[ttsIndex]
+    target?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [ttsIndex, speaking])
+
+  const changeTtsRate = () => {
+    const options = [0.8, 1, 1.2, 1.5]
+    const next = options[(options.indexOf(ttsRate) + 1) % options.length]
+    setTtsRate(next)
+    if (speaking) startTts(ttsIndex, next)
   }
 
   useEffect(() => {
@@ -2287,7 +2312,12 @@ function Reader({
     const left = Math.max(10, Math.min(window.innerWidth - width - 10, rect.left + rect.width / 2 - width / 2))
     let top = rect.bottom + 8
     if (top + 44 > window.innerHeight - 10) top = Math.max(10, rect.top - 46)
-    setSelection({ text, left, top })
+    const rows = Array.from(element.querySelectorAll('p'))
+    const node = range.startContainer
+    const holder = node.nodeType === Node.ELEMENT_NODE ? (node as HTMLElement) : node.parentElement
+    const paragraph = holder?.closest('p') || null
+    const para = paragraph ? Math.max(0, rows.indexOf(paragraph)) : 0
+    setSelection({ text, left, top, para })
   }, [])
 
   useEffect(() => {
@@ -2579,7 +2609,7 @@ function Reader({
         )}
         {!loading && !error &&
           paragraphs.map((paragraph, i) => (
-            <p key={i}>
+            <p key={i} className={speaking && ttsIndex === i ? 'is-tts' : undefined}>
               <CharacterText
                 text={paragraph}
                 matcher={matcher}
@@ -2611,6 +2641,14 @@ function Reader({
         </>
       ) : null}
 
+      {speaking ? (
+        <div className="tts-bar" onMouseDown={(event) => event.stopPropagation()}>
+          <span>朗读 {ttsIndex + 1} / {paragraphs.length}</span>
+          <button className="tts-chip" onClick={changeTtsRate}>{ttsRate}×</button>
+          <button className="tts-chip" onClick={() => { playerRef.current.stop(); setSpeaking(false) }}>停止</button>
+        </div>
+      ) : null}
+
       {summary !== null && (
         <div className="summary-backdrop" onClick={() => setSummary(null)}>
           <div className="summary-card" onClick={(event) => event.stopPropagation()}>
@@ -2638,6 +2676,17 @@ function Reader({
             }}
           >
             标为人物
+          </button>
+          <button
+            className="hl-action"
+            onClick={() => {
+              const para = selection.para
+              setSelection(null)
+              window.getSelection()?.removeAllRanges()
+              startTts(para)
+            }}
+          >
+            从这里朗读
           </button>
           <button className="hl-close" onClick={() => setSelection(null)} title="关闭">×</button>
         </div>
