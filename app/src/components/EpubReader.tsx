@@ -211,7 +211,7 @@ export default function EpubReader(props: EpubReaderProps) {
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
   const [speaking, setSpeaking] = useState(false)
   const [ttsIndex, setTtsIndex] = useState(0)
-  const [ttsRate, setTtsRate] = useState(1)
+  const [ttsRate, setTtsRate] = useState(0.9)
   const playerRef = useRef(new TtsPlayer())
   const [summary, setSummary] = useState<string | null>(null)
   const [summaryBusy, setSummaryBusy] = useState(false)
@@ -303,7 +303,7 @@ export default function EpubReader(props: EpubReaderProps) {
   }
 
   const changeTtsRate = () => {
-    const options = [0.8, 1, 1.2, 1.5]
+    const options = [0.8, 0.9, 1, 1.2]
     const next = options[(options.indexOf(ttsRate) + 1) % options.length]
     setTtsRate(next)
     if (speaking) startTts(ttsIndex, next)

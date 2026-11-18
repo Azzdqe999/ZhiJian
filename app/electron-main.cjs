@@ -1,6 +1,8 @@
 const { app, BrowserWindow, Menu, ipcMain } = require('electron')
 const path = require('node:path')
 const fs = require('node:fs')
+const { spawn } = require('node:child_process')
+const readline = require('node:readline')
 
 function statePath() {
   return path.join(app.getPath('userData'), 'window-state.json')
@@ -33,6 +35,69 @@ function applyAlwaysOnTop(win, value) {
   writeWindowState({ ...readWindowState(), alwaysOnTop: next })
   return next
 }
+
+let ttsProcess = null
+let ttsSequence = 0
+const ttsWaiters = new Map()
+
+function ttsHelperPath() {
+  const local = path.join(__dirname, 'resources', 'tts-helper.exe')
+  if (fs.existsSync(local)) return local
+  return path.join(process.resourcesPath, 'tts-helper.exe')
+}
+
+function ensureTtsProcess() {
+  if (ttsProcess && !ttsProcess.killed) return ttsProcess
+  const exe = ttsHelperPath()
+  if (!fs.existsSync(exe)) throw new Error('TTS 组件缺失：resources/tts-helper.exe')
+  ttsProcess = spawn(exe, [], { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] })
+  readline.createInterface({ input: ttsProcess.stdout }).on('line', (line) => {
+    try {
+      const message = JSON.parse(line)
+      const waiter = ttsWaiters.get(message.id)
+      if (!waiter) return
+      ttsWaiters.delete(message.id)
+      clearTimeout(waiter.timer)
+      if (message.ok) waiter.resolve(message.path)
+      else waiter.reject(new Error(message.error || 'TTS 合成失败'))
+    } catch {
+      /* 忽略非 JSON 输出 */
+    }
+  })
+  ttsProcess.on('exit', () => {
+    ttsProcess = null
+    for (const waiter of ttsWaiters.values()) {
+      clearTimeout(waiter.timer)
+      waiter.reject(new Error('TTS 进程已退出'))
+    }
+    ttsWaiters.clear()
+  })
+  return ttsProcess
+}
+
+ipcMain.handle('paper-tts:speak', async (_event, options) => {
+  const process = ensureTtsProcess()
+  const id = String(++ttsSequence)
+  const out = path.join(app.getPath('temp'), 'paper-tts-' + id + '.mp3')
+  const result = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      ttsWaiters.delete(id)
+      reject(new Error('TTS 合成超时'))
+    }, 60000)
+    ttsWaiters.set(id, { resolve, reject, timer })
+  })
+  process.stdin.write(JSON.stringify({
+    id,
+    text: options.text,
+    voice: options.voice || 'zh-CN-XiaoyiNeural',
+    rate: options.rate || '-8%',
+    path: out,
+  }) + '\n')
+  await result
+  const buffer = await fs.promises.readFile(out)
+  await fs.promises.unlink(out).catch(() => {})
+  return buffer.toString('base64')
+})
 
 ipcMain.handle('paper-window:set-always-on-top', (event, value) => {
   return applyAlwaysOnTop(BrowserWindow.fromWebContents(event.sender), value)
@@ -92,6 +157,10 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+})
+
+app.on('before-quit', () => {
+  if (ttsProcess && !ttsProcess.killed) ttsProcess.kill()
 })
 
 app.on('window-all-closed', () => {

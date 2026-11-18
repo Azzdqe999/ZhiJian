@@ -4,6 +4,10 @@ contextBridge.exposeInMainWorld('paperSync', {
   request: (opts) => ipcRenderer.invoke('paper-sync:request', opts),
 })
 
+contextBridge.exposeInMainWorld('paperTts', {
+  synthesize: (options) => ipcRenderer.invoke('paper-tts:speak', options),
+})
+
 contextBridge.exposeInMainWorld('paperWindow', {
   setAlwaysOnTop: (value) => ipcRenderer.invoke('paper-window:set-always-on-top', value),
   getAlwaysOnTop: () => ipcRenderer.invoke('paper-window:get-always-on-top'),
