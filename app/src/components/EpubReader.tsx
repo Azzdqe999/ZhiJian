@@ -10,7 +10,7 @@ import type { CardRect, CharacterMatcher } from '../lib/characters'
 import type { Bookmark, BookMeta, Character, FontFamily, Note, NoteColor, Theme } from '../lib/types'
 import NoteEditor from './NoteEditor'
 import type { NoteEditorValues } from './NoteEditor'
-import { extractCharacters, extractPlaces, loadAiConfig } from '../lib/ai'
+import { extractCharacters, extractPlaces, loadAiConfig, summarizeChapter } from '../lib/ai'
 import { speakTts, stopTts, ttsSupported } from '../lib/tts'
 import type { AiCharacter } from '../lib/ai'
 
@@ -209,6 +209,33 @@ export default function EpubReader(props: EpubReaderProps) {
   const [currentIndex, setCurrentIndex] = useState(book.chapterIndex || 0)
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
   const [speaking, setSpeaking] = useState(false)
+  const [summary, setSummary] = useState<string | null>(null)
+  const [summaryBusy, setSummaryBusy] = useState(false)
+
+  const showSummary = async () => {
+    if (summaryBusy) return
+    const rendition = renditionRef.current
+    const contents = rendition ? firstContents(rendition) : null
+    const text = contents?.document.body.innerText || ''
+    if (!text.trim()) {
+      props.onToast('这一页还没有可摘要的文字')
+      return
+    }
+    setSummaryBusy(true)
+    try {
+      const config = await loadAiConfig()
+      if (!config.apiKey.trim() && config.provider !== 'ollama') {
+        props.onToast('先在设置里配置 AI')
+        return
+      }
+      const title = titleForHref(hrefRef.current, tocRef.current) || tocRef.current[indexRef.current]?.label || '本章'
+      setSummary(await summarizeChapter(config, title, text))
+    } catch (error) {
+      props.onToast('摘要失败：' + (error instanceof Error ? error.message : String(error)))
+    } finally {
+      setSummaryBusy(false)
+    }
+  }
 
   useEffect(() => () => { void stopTts() }, [])
 
@@ -1048,6 +1075,7 @@ export default function EpubReader(props: EpubReaderProps) {
         </button>
         <button className="toc-btn" onClick={props.onOpenMap}>地图</button>
         {ttsSupported() ? <button className="toc-btn" onClick={() => void toggleSpeak()}>{speaking ? '停止' : '朗读'}</button> : null}
+        <button className="toc-btn" onClick={() => void showSummary()} disabled={summaryBusy}>{summaryBusy ? '摘要中…' : '摘要'}</button>
         <button className="toc-btn sheet-trigger" onClick={props.onOpenSheet} title="阅读设置" aria-label="阅读设置">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
         </button>
@@ -1202,6 +1230,17 @@ export default function EpubReader(props: EpubReaderProps) {
           <button className="page-turn next" onClick={() => scrollEpubPage(renditionRef.current, 1)} title="下一页">›</button>
         </>
       ) : null}
+
+      {summary !== null && (
+        <div className="summary-backdrop" onClick={() => setSummary(null)}>
+          <div className="summary-card" onClick={(event) => event.stopPropagation()}>
+            <div className="eyebrow">AI 摘要</div>
+            <h2>{chapterTitle}</h2>
+            <p>{summary}</p>
+            <button className="btn solid" onClick={() => setSummary(null)}>关闭</button>
+          </div>
+        </div>
+      )}
 
       {zoomImage && (
         <div className="image-zoom" onClick={() => setZoomImage(null)}>

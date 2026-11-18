@@ -53,7 +53,7 @@ import { fontLabel, fontStack } from './lib/fonts'
 import { downloadMarkdown, notesFileName, notesToMarkdown } from './lib/markdown'
 import { sha256 } from './lib/hash'
 import { syncNow } from './lib/sync'
-import { extractCharacters, extractPlaces, loadAiConfig } from './lib/ai'
+import { extractCharacters, extractPlaces, loadAiConfig, summarizeChapter } from './lib/ai'
 import type { AiCharacter } from './lib/ai'
 import {
   buildMatcher,
@@ -1586,6 +1586,15 @@ function App() {
           onClose={() => setDetailId(null)}
           onReloaded={handleReloaded}
           onDeleted={handleDeleted}
+          onUpdate={(patch) => {
+            void (async () => {
+              if (!detail) return
+              const next = { ...detail, ...patch }
+              await putBook(next)
+              handleReloaded(next)
+              showToast('书籍信息已更新')
+            })()
+          }}
         />
       )}
 
@@ -2137,6 +2146,25 @@ function Reader({
   const [selection, setSelection] = useState<{ text: string; left: number; top: number } | null>(null)
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
   const [speaking, setSpeaking] = useState(false)
+  const [summary, setSummary] = useState<string | null>(null)
+  const [summaryBusy, setSummaryBusy] = useState(false)
+
+  const showSummary = async () => {
+    if (!chapter || summaryBusy) return
+    setSummaryBusy(true)
+    try {
+      const config = await loadAiConfig()
+      if (!config.apiKey.trim() && config.provider !== 'ollama') {
+        onToast('先在设置里配置 AI')
+        return
+      }
+      setSummary(await summarizeChapter(config, chapter.title, chapter.text))
+    } catch (error) {
+      onToast('摘要失败：' + (error instanceof Error ? error.message : String(error)))
+    } finally {
+      setSummaryBusy(false)
+    }
+  }
 
   useEffect(() => () => { void stopTts() }, [])
 
@@ -2507,6 +2535,7 @@ function Reader({
         </button>
         <button className="toc-btn" onClick={onOpenMap}>地图</button>
         {ttsSupported() ? <button className="toc-btn" onClick={() => void toggleSpeak()}>{speaking ? '停止' : '朗读'}</button> : null}
+        <button className="toc-btn" onClick={() => void showSummary()} disabled={summaryBusy}>{summaryBusy ? '摘要中…' : '摘要'}</button>
         <button className="toc-btn sheet-trigger" onClick={onOpenSheet} title="阅读设置" aria-label="阅读设置">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
         </button>
@@ -2581,6 +2610,17 @@ function Reader({
           <button className="page-turn next" onClick={() => turnPage(1)} title="下一页">›</button>
         </>
       ) : null}
+
+      {summary !== null && (
+        <div className="summary-backdrop" onClick={() => setSummary(null)}>
+          <div className="summary-card" onClick={(event) => event.stopPropagation()}>
+            <div className="eyebrow">AI 摘要</div>
+            <h2>{chapter?.title}</h2>
+            <p>{summary}</p>
+            <button className="btn solid" onClick={() => setSummary(null)}>关闭</button>
+          </div>
+        </div>
+      )}
 
       {selection && (
         <div
@@ -2666,9 +2706,13 @@ type BookDetailProps = {
   onClose: () => void
   onReloaded: (book: BookMeta) => void
   onDeleted: (id: string) => void
+  onUpdate: (patch: Pick<BookMeta, 'title' | 'author'>) => void
 }
 
-function BookDetail({ book, collections, onAssign, onSplit, onClose, onReloaded, onDeleted }: BookDetailProps) {
+function BookDetail({ book, collections, onAssign, onSplit, onClose, onReloaded, onDeleted, onUpdate }: BookDetailProps) {
+  const [editing, setEditing] = useState(false)
+  const [editTitle, setEditTitle] = useState(book.title)
+  const [editAuthor, setEditAuthor] = useState(book.author)
   const [choice, setChoice] = useState<TextEncoding | 'auto'>(book.encoding)
   const [series, setSeries] = useState(book.series || '')
   const [busy, setBusy] = useState(false)
@@ -2680,6 +2724,9 @@ function BookDetail({ book, collections, onAssign, onSplit, onClose, onReloaded,
     setSeries(book.series || '')
     setConfirming(false)
     setNote('')
+    setEditing(false)
+    setEditTitle(book.title)
+    setEditAuthor(book.author)
   }, [book.id])
 
   const saveSeries = async () => {
@@ -2822,15 +2869,41 @@ function BookDetail({ book, collections, onAssign, onSplit, onClose, onReloaded,
 
         {note && <p className="notice">{note}</p>}
 
+        {editing ? (
+          <div className="edit-book-form">
+            <label>
+              <span>书名</span>
+              <input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} />
+            </label>
+            <label>
+              <span>作者</span>
+              <input value={editAuthor} onChange={(event) => setEditAuthor(event.target.value)} />
+            </label>
+            <div className="modal-actions">
+              <button className="btn" onClick={() => setEditing(false)}>取消</button>
+              <button
+                className="btn solid"
+                onClick={() => {
+                  onUpdate({ title: editTitle.trim() || book.title, author: editAuthor.trim() || '佚名' })
+                  setEditing(false)
+                }}
+              >
+                保存
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         <div className="modal-actions">
           {confirming ? (
             <div className="confirm-row">
-              <span>确定删除《{book.title}》？正文和进度都会移除。</span>
-              <button className="btn danger" disabled={busy} onClick={remove}>删除</button>
+              <span>确定把《{book.title}》移入回收站？之后可以恢复。</span>
+              <button className="btn danger" disabled={busy} onClick={remove}>移入回收站</button>
               <button className="btn" onClick={() => setConfirming(false)}>取消</button>
             </div>
           ) : (
             <>
+              <button className="btn" onClick={() => setEditing((value) => !value)}>编辑信息</button>
               <button className="btn danger" onClick={() => setConfirming(true)}>删除这本书</button>
               <button className="btn solid" onClick={onClose}>完成</button>
             </>

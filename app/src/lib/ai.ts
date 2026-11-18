@@ -122,6 +122,15 @@ export async function listAiModels(config: AiConfig): Promise<string[]> {
   return []
 }
 
+export async function summarizeChapter(config: AiConfig, title: string, text: string): Promise<string> {
+  const clipped = text.slice(0, 9000)
+  const content = await chat(config, [
+    { role: 'system', content: '你是小说阅读助手。用简洁中文概括本章剧情，保留关键人物和事件，不推测后文，不剧透。控制在 250 字以内。' },
+    { role: 'user', content: '章节：' + title + '\n\n' + clipped },
+  ])
+  return content.trim()
+}
+
 export async function testAi(config: AiConfig): Promise<string> {
   return chat(config, [{ role: 'user', content: '只回复两个字：可用' }])
 }
