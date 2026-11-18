@@ -444,6 +444,28 @@ function App() {
 
   useEffect(() => {
     if (!booted) return
+    let timer = 0
+    void (async () => {
+      const config = await getSyncConfig()
+      if (!config || !config.enabled || !config.autoMinutes) return
+      timer = window.setInterval(() => {
+        void (async () => {
+          try {
+            await syncNow()
+            await refreshLocalData()
+          } catch {
+            /* 自动同步失败留给下次 */
+          }
+        })()
+      }, Math.max(5, config.autoMinutes) * 60 * 1000)
+    })()
+    return () => {
+      if (timer) window.clearInterval(timer)
+    }
+  }, [booted, refreshLocalData])
+
+  useEffect(() => {
+    if (!booted) return
     const timer = window.setTimeout(() => {
       saveSettings({ fontSize, theme, fontFamily, characterMark: markEnabled, readingMode, volumePaging, lineHeight, paragraphGap, pageMargin, textIndent, textAlign }).catch(() => {})
     }, 160)

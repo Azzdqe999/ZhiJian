@@ -31,6 +31,8 @@ const EMPTY_SYNC: SyncConfig = {
   user: '',
   pass: '',
   enabled: true,
+  autoMinutes: 0,
+  maxFileMB: 50,
 }
 
 export default function SettingsPanel(props: Props) {
@@ -210,6 +212,8 @@ export default function SettingsPanel(props: Props) {
       const result = await syncNow()
       const skipped = result.skipped ? ' · 跳过 ' + result.skipped + ' 个超大文件' : ''
       setStatus('同步完成：' + result.books + ' 本书 · ' + result.notes + ' 条笔记 · ' + result.characters + ' 位人物' + skipped)
+      const latest = await getSyncConfig()
+      if (latest) setSync({ ...EMPTY_SYNC, ...latest })
       props.onToast?.('同步完成')
       await props.onSynced?.()
     } catch (error) {
@@ -427,6 +431,19 @@ export default function SettingsPanel(props: Props) {
               placeholder="坚果云应用密码"
             />
           </label>
+          <label>
+            <span>自动同步</span>
+            <select value={sync.autoMinutes || 0} onChange={(event) => setSync({ ...sync, autoMinutes: Number(event.target.value) })}>
+              <option value={0}>关闭</option>
+              <option value={15}>每 15 分钟</option>
+              <option value={30}>每 30 分钟</option>
+              <option value={60}>每小时</option>
+            </select>
+          </label>
+          <label>
+            <span>单文件上限 MB</span>
+            <input type="number" min={5} max={500} value={sync.maxFileMB || 50} onChange={(event) => setSync({ ...sync, maxFileMB: Number(event.target.value) })} />
+          </label>
         </div>
         <div className="setting-inline sync-actions">
           <button className="btn small" onClick={onTest} disabled={!!busy}>{busy === 'test' ? '连接中…' : '测试连接'}</button>
@@ -435,6 +452,11 @@ export default function SettingsPanel(props: Props) {
           {sync.lastSyncAt ? <span className="setting-value">上次 {new Date(sync.lastSyncAt).toLocaleString()}</span> : null}
         </div>
         {status && <p className="setting-foot">{status}</p>}
+        {sync.lastSummary ? (
+          <p className="setting-foot">
+            上次同步：{sync.lastSummary.books} 本书 · 上传 {sync.lastSummary.uploaded} · 下载 {sync.lastSummary.downloaded} · 跳过 {sync.lastSummary.skipped} · {new Date(sync.lastSummary.at).toLocaleString()}
+          </p>
+        ) : null}
       </section>
 
       {isNativeUpdater() ? (

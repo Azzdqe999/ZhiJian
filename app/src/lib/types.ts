@@ -74,6 +74,17 @@ export type SyncConfig = {
   enabled: boolean
   lastSyncAt?: number
   deviceId?: string
+  /** 自动同步间隔（分钟），0/未设置为关闭 */
+  autoMinutes?: number
+  /** 单本书同步上限（MB） */
+  maxFileMB?: number
+  lastSummary?: {
+    at: number
+    books: number
+    uploaded: number
+    downloaded: number
+    skipped: number
+  }
 }
 
 export type SyncTombstone = {

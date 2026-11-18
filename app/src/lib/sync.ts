@@ -333,7 +333,7 @@ export async function syncNow(): Promise<SyncResult> {
   let uploaded = 0
   let downloaded = 0
   let skipped = 0
-  const MAX_BOOK_BYTES = 50 * 1024 * 1024
+  const MAX_BOOK_BYTES = Math.max(5, config.maxFileMB || 50) * 1024 * 1024
 
   for (const book of merged.books) {
     if ((book.byteSize || 0) > MAX_BOOK_BYTES) {
@@ -407,7 +407,11 @@ export async function syncNow(): Promise<SyncResult> {
   await putText(config, PREFIX + 'device-' + deviceId + '.json', JSON.stringify(finalSnapshot))
 
   const at = Date.now()
-  await saveSyncConfig({ ...config, lastSyncAt: at })
+  await saveSyncConfig({
+    ...config,
+    lastSyncAt: at,
+    lastSummary: { at, books: merged.books.length, uploaded, downloaded, skipped },
+  })
 
   return {
     books: merged.books.length,
