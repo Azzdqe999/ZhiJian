@@ -44,6 +44,11 @@ export type Settings = {
   /** M3：正文人物标记的总开关，默认开 */
   characterMark?: boolean
   readingMode?: 'scroll' | 'paged'
+  lineHeight?: number
+  paragraphGap?: number
+  pageMargin?: number
+  textIndent?: boolean
+  textAlign?: 'left' | 'justify'
   /** M5：WebDAV 同步配置 */
   sync?: SyncConfig
 }
@@ -73,7 +78,7 @@ export type SyncImageMeta = {
 }
 
 export type AiConfig = {
-  provider: 'gemini' | 'ollama' | 'custom'
+  provider: 'gemini' | 'ollama' | 'lmstudio' | 'custom'
   baseUrl: string
   model: string
   apiKey: string

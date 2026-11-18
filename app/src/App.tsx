@@ -66,6 +66,8 @@ import NotesPanel from './components/NotesPanel'
 import CharactersPanel from './components/CharactersPanel'
 import MapViewer from './components/MapViewer'
 import ReaderSheet from './components/ReaderSheet'
+import { searchLibrary } from './lib/search'
+import type { SearchHit } from './lib/search'
 import CharacterDrawer from './components/CharacterDrawer'
 import CharacterCard from './components/CharacterCard'
 import CharacterEditor from './components/CharacterEditor'
@@ -180,7 +182,16 @@ function App() {
   const [readingId, setReadingId] = useState<string | null>(null)
   const [fontSize, setFontSize] = useState(19)
   const [readingMode, setReadingMode] = useState<'scroll' | 'paged'>('scroll')
+  const [lineHeight, setLineHeight] = useState(1.95)
+  const [paragraphGap, setParagraphGap] = useState(0.7)
+  const [pageMargin, setPageMargin] = useState(30)
+  const [textIndent, setTextIndent] = useState(true)
+  const [textAlign, setTextAlign] = useState<'left' | 'justify'>('justify')
   const [readerSheetOpen, setReaderSheetOpen] = useState(false)
+  const [fullSearchOpen, setFullSearchOpen] = useState(false)
+  const [fullQuery, setFullQuery] = useState('')
+  const [fullHits, setFullHits] = useState<SearchHit[]>([])
+  const [fullBusy, setFullBusy] = useState(false)
   const [fontFamily, setFontFamily] = useState<FontFamily>('serif')
   const [theme, setTheme] = useState<Theme>('paper')
   const [notes, setNotes] = useState<Note[]>([])
@@ -323,6 +334,25 @@ function App() {
     toastTimer.current = window.setTimeout(() => setToast(null), 4500)
   }, [])
 
+  useEffect(() => {
+    if (!fullSearchOpen || fullQuery.trim().length < 2) {
+      setFullHits([])
+      return
+    }
+    let alive = true
+    const timer = window.setTimeout(() => {
+      setFullBusy(true)
+      void searchLibrary(fullQuery)
+        .then((hits) => { if (alive) setFullHits(hits) })
+        .catch(() => { if (alive) setFullHits([]) })
+        .finally(() => { if (alive) setFullBusy(false) })
+    }, 300)
+    return () => {
+      alive = false
+      window.clearTimeout(timer)
+    }
+  }, [fullQuery, fullSearchOpen])
+
   const refreshLocalData = useCallback(async () => {
     const [books, savedNotes, savedCharacters, savedImages, savedCollections] = await Promise.all([
       listBooks(),
@@ -368,6 +398,11 @@ function App() {
           if (settings.fontFamily) setFontFamily(settings.fontFamily)
           if (typeof settings.characterMark === 'boolean') setMarkEnabled(settings.characterMark)
           if (settings.readingMode === 'paged' || settings.readingMode === 'scroll') setReadingMode(settings.readingMode)
+          if (typeof settings.lineHeight === 'number') setLineHeight(settings.lineHeight)
+          if (typeof settings.paragraphGap === 'number') setParagraphGap(settings.paragraphGap)
+          if (typeof settings.pageMargin === 'number') setPageMargin(settings.pageMargin)
+          if (typeof settings.textIndent === 'boolean') setTextIndent(settings.textIndent)
+          if (settings.textAlign === 'left' || settings.textAlign === 'justify') setTextAlign(settings.textAlign)
         }
       } catch (error) {
         if (alive) showToast('本地书架打开失败：' + (error instanceof Error ? error.message : String(error)))
@@ -394,7 +429,7 @@ function App() {
   useEffect(() => {
     if (!booted) return
     const timer = window.setTimeout(() => {
-      saveSettings({ fontSize, theme, fontFamily, characterMark: markEnabled, readingMode }).catch(() => {})
+      saveSettings({ fontSize, theme, fontFamily, characterMark: markEnabled, readingMode, lineHeight, paragraphGap, pageMargin, textIndent, textAlign }).catch(() => {})
     }, 160)
     return () => window.clearTimeout(timer)
   }, [booted, fontSize, theme, fontFamily, markEnabled])
@@ -1337,7 +1372,16 @@ function App() {
   }
 
   return (
-    <div className={'app theme-' + theme + (reading ? ' is-reading' : '') + (updateInfo && !updateHidden ? ' has-update' : '')}>
+    <div
+      className={'app theme-' + theme + (reading ? ' is-reading' : '') + (updateInfo && !updateHidden ? ' has-update' : '')}
+      style={{
+        '--reader-line-height': String(lineHeight),
+        '--reader-paragraph-gap': paragraphGap + 'em',
+        '--reader-page-margin': pageMargin + 'px',
+        '--reader-indent': textIndent ? '2em' : '0',
+        '--reader-align': textAlign,
+      } as React.CSSProperties}
+    >
       {updateInfo && !updateHidden ? (
         <div className="update-banner">
           <div className="update-copy">
@@ -1425,6 +1469,11 @@ function App() {
             onAiCharacters={(list, kind) => void addAiCharacters(readingScope, list, kind)}
             onOpenMap={() => setMapBookId(readingScope)}
             readingMode={readingMode}
+            lineHeight={lineHeight}
+            paragraphGap={paragraphGap}
+            pageMargin={pageMargin}
+            textIndent={textIndent}
+            textAlign={textAlign}
             onOpenSheet={() => setReaderSheetOpen(true)}
           />
         ) : (
@@ -1472,6 +1521,7 @@ function App() {
           onOpen={openBook}
           onImport={() => fileRef.current?.click()}
           onDetail={(book) => setDetailId(book.id)}
+          onFullSearch={() => { setFullQuery(''); setFullHits([]); setFullSearchOpen(true) }}
         />
       ) : nav === 'notes' ? (
         <NotesPanel notes={notes} books={library} onJump={jumpToNote} onExport={exportNotes} onToast={showToast} />
@@ -1653,6 +1703,46 @@ function App() {
         </div>
       )}
 
+      {fullSearchOpen && (
+        <div className="modal-backdrop" onClick={() => setFullSearchOpen(false)}>
+          <div className="modal search-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <div className="eyebrow">全文搜索</div>
+                <h2>在书中找一句话</h2>
+              </div>
+              <button className="icon-btn" onClick={() => setFullSearchOpen(false)}>×</button>
+            </div>
+            <input
+              className="search-input"
+              autoFocus
+              placeholder="输入至少两个字，搜索所有 TXT 章节"
+              value={fullQuery}
+              onChange={(event) => setFullQuery(event.target.value)}
+              onInput={(event) => setFullQuery((event.target as HTMLInputElement).value)}
+            />
+            {fullBusy ? <p className="setting-foot">搜索中…</p> : null}
+            <div className="search-results">
+              {fullHits.map((hit) => (
+                <button
+                  key={hit.bookId + '-' + hit.chapterIndex + '-' + hit.offset}
+                  className="search-hit"
+                  onClick={() => {
+                    setReadingId(hit.bookId)
+                    setJumpChapter({ bookId: hit.bookId, index: hit.chapterIndex, token: Date.now() })
+                    setFullSearchOpen(false)
+                  }}
+                >
+                  <span className="search-hit-title">{hit.bookTitle} · {hit.chapterTitle}</span>
+                  <span className="search-hit-snippet">{hit.snippet}</span>
+                </button>
+              ))}
+              {!fullBusy && fullQuery.trim().length >= 2 && !fullHits.length ? <p className="setting-foot">没有找到。</p> : null}
+            </div>
+          </div>
+        </div>
+      )}
+
       {readerSheetOpen && reading ? (
         <ReaderSheet
           fontSize={fontSize}
@@ -1665,6 +1755,16 @@ function App() {
           onReadingMode={setReadingMode}
           markEnabled={markEnabled}
           onToggleMark={() => setMarkEnabled((value) => !value)}
+          lineHeight={lineHeight}
+          onLineHeight={setLineHeight}
+          paragraphGap={paragraphGap}
+          onParagraphGap={setParagraphGap}
+          pageMargin={pageMargin}
+          onPageMargin={setPageMargin}
+          textIndent={textIndent}
+          onToggleIndent={() => setTextIndent((value) => !value)}
+          textAlign={textAlign}
+          onTextAlign={setTextAlign}
           onClose={() => setReaderSheetOpen(false)}
         />
       ) : null}
@@ -1764,9 +1864,10 @@ type ShelfProps = {
   onOpen: (book: BookMeta) => void
   onImport: () => void
   onDetail: (book: BookMeta) => void
+  onFullSearch: () => void
 }
 
-function Shelf({ books, collections, collectionFilter, isSeries, onCollectionFilter, onCreateCollection, onToggleSeries, onRenameCollection, onDeleteCollection, onBulkAssign, onOpen, onImport, onDetail }: ShelfProps) {
+function Shelf({ books, collections, collectionFilter, isSeries, onCollectionFilter, onCreateCollection, onToggleSeries, onRenameCollection, onDeleteCollection, onBulkAssign, onOpen, onImport, onDetail, onFullSearch }: ShelfProps) {
   const [query, setQuery] = useState('')
   const [selectMode, setSelectMode] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -1823,6 +1924,7 @@ function Shelf({ books, collections, collectionFilter, isSeries, onCollectionFil
             <input placeholder="搜索书名、作者" value={query} onChange={(event) => setQuery(event.target.value)} />
           </label>
           <button className="btn" onClick={onImport}>导入</button>
+          <button className="btn" onClick={onFullSearch}>全文</button>
           <button
             className={'btn' + (selectMode ? ' solid' : '')}
             onClick={() => { if (selectMode) exitSelect(); else setSelectMode(true) }}

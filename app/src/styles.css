@@ -1728,3 +1728,25 @@ input { font-family: inherit; }
 .epub-stage.is-paged iframe { width: 100% !important; height: 100% !important; }
 .epub-stage.is-paged .epub-view { height: 100% !important; }
 @media (max-width: 760px) { .page-turn { display: none !important; } }
+
+/* ---------- 排版设置 ---------- */
+.page:not(.is-paged) {
+  padding-left: var(--reader-page-margin, 30px);
+  padding-right: var(--reader-page-margin, 30px);
+}
+.page p {
+  line-height: var(--reader-line-height, 1.95);
+  margin-top: 0;
+  margin-bottom: var(--reader-paragraph-gap, 0.7em);
+  text-align: var(--reader-align, justify);
+  text-indent: var(--reader-indent, 2em);
+}
+.page .reader-head p, .page .chapter-end, .page .chapter-nav, .page .reader-note { text-indent: 0; }
+
+.search-modal { width: min(720px, 100%); max-height: 82vh; display: flex; flex-direction: column; }
+.search-input { width: 100%; margin: 10px 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); font-size: 14px; }
+.search-results { flex: 1; min-height: 80px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.search-hit { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--ink); text-align: left; }
+.search-hit:hover { border-color: var(--accent); }
+.search-hit-title { font-size: 11px; color: var(--muted); }
+.search-hit-snippet { font-size: 13px; line-height: 1.7; }

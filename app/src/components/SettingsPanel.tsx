@@ -3,8 +3,9 @@ import type { AiConfig, FontFamily, SyncConfig, Theme } from '../lib/types'
 import { FONT_OPTIONS } from '../lib/fonts'
 import { getSyncConfig, saveSyncConfig } from '../lib/store'
 import { syncNow, testConnection } from '../lib/sync'
-import { AI_MODELS, AI_PRESETS, EMPTY_AI, loadAiConfig, persistAiConfig, testAi } from '../lib/ai'
+import { AI_MODELS, AI_PRESETS, EMPTY_AI, listAiModels, loadAiConfig, persistAiConfig, testAi } from '../lib/ai'
 import { checkForUpdate, getAppVersion, installUpdate, isNativeUpdater } from '../lib/updater'
+import { downloadBlob, exportBackup, importBackup } from '../lib/backup'
 import type { UpdateInfo } from '../lib/updater'
 
 type Props = {
@@ -42,6 +43,56 @@ export default function SettingsPanel(props: Props) {
   const [ai, setAi] = useState<AiConfig>(EMPTY_AI)
   const [aiBusy, setAiBusy] = useState(false)
   const [aiStatus, setAiStatus] = useState('')
+  const [localModels, setLocalModels] = useState<string[]>([])
+
+  const onLoadModels = async () => {
+    setAiBusy(true)
+    setAiStatus('读取模型列表…')
+    try {
+      const models = await listAiModels(ai)
+      setLocalModels(models)
+      setAiStatus(models.length ? '找到 ' + models.length + ' 个模型' : '没有找到模型，确认本地服务已启动')
+    } catch (error) {
+      setAiStatus('读取失败：' + (error instanceof Error ? error.message : String(error)))
+    } finally {
+      setAiBusy(false)
+    }
+  }
+  const [backupBusy, setBackupBusy] = useState(false)
+  const [backupStatus, setBackupStatus] = useState('')
+
+  const onExportBackup = async () => {
+    setBackupBusy(true)
+    setBackupStatus('准备备份…')
+    try {
+      const blob = await exportBackup(setBackupStatus)
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
+      downloadBlob(blob, '纸间备份-' + stamp + '.zip')
+      setBackupStatus('备份已导出：' + (blob.size / 1024 / 1024).toFixed(1) + ' MB')
+      props.onToast?.('备份已导出')
+    } catch (error) {
+      setBackupStatus('备份失败：' + (error instanceof Error ? error.message : String(error)))
+    } finally {
+      setBackupBusy(false)
+    }
+  }
+
+  const onImportBackup = async (file: File | null) => {
+    if (!file) return
+    if (!window.confirm('导入会覆盖同 ID 的书籍、笔记、人物和地图，确定继续？')) return
+    setBackupBusy(true)
+    setBackupStatus('正在导入…')
+    try {
+      const result = await importBackup(file, setBackupStatus)
+      setBackupStatus('导入完成：' + result.books + ' 本书 · ' + result.characters + ' 位人物 · ' + result.maps + ' 张地图')
+      props.onToast?.('备份导入完成')
+      window.setTimeout(() => window.location.reload(), 900)
+    } catch (error) {
+      setBackupStatus('导入失败：' + (error instanceof Error ? error.message : String(error)))
+    } finally {
+      setBackupBusy(false)
+    }
+  }
 
   useEffect(() => {
     void getSyncConfig().then((value) => {
@@ -269,7 +320,7 @@ export default function SettingsPanel(props: Props) {
             <span>模型</span>
             <input list="ai-models" value={ai.model} onChange={(event) => setAi({ ...ai, model: event.target.value })} spellCheck={false} />
             <datalist id="ai-models">
-              {AI_MODELS.map((model) => <option key={model} value={model} />)}
+              {[...AI_MODELS, ...localModels].map((model) => <option key={model} value={model} />)}
             </datalist>
           </label>
           <label>
@@ -283,6 +334,7 @@ export default function SettingsPanel(props: Props) {
           </label>
         </div>
         <div className="setting-inline sync-actions">
+          <button className="btn small" onClick={() => void onLoadModels()} disabled={aiBusy}>{aiBusy ? '请求中…' : '读取模型'}</button>
           <button className="btn small" onClick={onAiTest} disabled={aiBusy}>{aiBusy ? '请求中…' : '测试 AI'}</button>
           <button className="btn small" onClick={onAiSave} disabled={aiBusy}>保存</button>
           {aiStatus && <span className="setting-value">{aiStatus}</span>}
@@ -377,6 +429,31 @@ export default function SettingsPanel(props: Props) {
           <p className="setting-foot">更新包从 GitHub Releases 下载；安装时系统会再确认一次。</p>
         </section>
       ) : null}
+
+      <section className="setting-card">
+        <h2>备份与恢复</h2>
+        <p className="setting-foot">导出包含书籍文件、封面、笔记、人物、地图和设置的 zip。建议每周备份一次。</p>
+        <div className="setting-inline sync-actions">
+          <button className="btn small solid" onClick={() => void onExportBackup()} disabled={backupBusy}>
+            {backupBusy ? '处理中…' : '导出备份'}
+          </button>
+          <label className={'btn small' + (backupBusy ? ' is-disabled' : '')}>
+            导入备份
+            <input
+              type="file"
+              accept=".zip,application/zip"
+              hidden
+              disabled={backupBusy}
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null
+                event.target.value = ''
+                void onImportBackup(file)
+              }}
+            />
+          </label>
+        </div>
+        {backupStatus ? <p className="setting-foot">{backupStatus}</p> : null}
+      </section>
 
       <section className="setting-card">
         <h2>本地存储</h2>

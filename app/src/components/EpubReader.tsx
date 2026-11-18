@@ -61,6 +61,11 @@ type EpubReaderProps = {
   onAiCharacters: (list: AiCharacter[], kind: 'character' | 'place') => void
   onOpenMap: () => void
   readingMode: 'scroll' | 'paged'
+  lineHeight: number
+  paragraphGap: number
+  pageMargin: number
+  textIndent: boolean
+  textAlign: 'left' | 'justify'
   onOpenSheet: () => void
 }
 
@@ -208,6 +213,23 @@ export default function EpubReader(props: EpubReaderProps) {
   const [atEnd, setAtEnd] = useState(false)
   const [toolbar, setToolbar] = useState<ToolbarState | null>(null)
   const [editor, setEditor] = useState<EditorState | null>(null)
+
+  useEffect(() => {
+    const rendition = renditionRef.current
+    if (!rendition || status !== 'ready') return
+    try {
+      const themes = rendition.themes as unknown as { css: (css: string, id?: string) => void }
+      rendition.themes.override('line-height', String(props.lineHeight))
+      rendition.themes.override('text-align', props.textAlign)
+      themes.css(
+        'body{padding-left:' + props.pageMargin + 'px!important;padding-right:' + props.pageMargin + 'px!important}' +
+        'p{line-height:' + props.lineHeight + '!important;margin-bottom:' + props.paragraphGap + 'em!important;text-align:' + props.textAlign + '!important;text-indent:' + (props.textIndent ? '2em' : '0') + '!important}',
+        'paper-typography',
+      )
+    } catch {
+      /* 排版注入失败不影响阅读 */
+    }
+  }, [props.lineHeight, props.paragraphGap, props.pageMargin, props.textIndent, props.textAlign, status])
 
   useEffect(() => {
     const onBack = (event: Event) => {

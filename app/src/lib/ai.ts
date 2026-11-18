@@ -21,6 +21,9 @@ export const AI_MODELS = [
   'gemini-1.5-flash',
   'qwen2.5:7b',
   'qwen2.5:14b',
+  'qwen3:4b',
+  'qwen3:8b',
+  'llama3.2:3b',
   'deepseek-chat',
 ]
 
@@ -34,6 +37,11 @@ export const AI_PRESETS: Record<AiConfig['provider'], { label: string; baseUrl: 
     label: '本地 Ollama',
     baseUrl: 'http://127.0.0.1:11434/v1',
     model: 'qwen2.5:7b',
+  },
+  lmstudio: {
+    label: '本地 LM Studio',
+    baseUrl: 'http://127.0.0.1:1234/v1',
+    model: 'qwen2.5-7b-instruct',
   },
   custom: {
     label: 'OpenAI 兼容',
@@ -94,6 +102,24 @@ export async function chat(config: AiConfig, messages: Array<{ role: string; con
   const content = data.choices?.[0]?.message?.content
   if (!content) throw new Error('AI 没有返回内容')
   return content
+}
+
+export async function listAiModels(config: AiConfig): Promise<string[]> {
+  const base = config.baseUrl.replace(/\/+$/, '')
+  const urls = [base + '/models']
+  if (base.includes(':11434')) urls.unshift(base.replace(/\/v1$/, '') + '/api/tags')
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, { headers: config.apiKey.trim() ? { Authorization: 'Bearer ' + config.apiKey.trim() } : {} })
+      if (!res.ok) continue
+      const data = (await res.json()) as { data?: Array<{ id?: string }>; models?: Array<{ name?: string }> }
+      const names = data.data?.map((item) => item.id).filter((item): item is string => Boolean(item)) || data.models?.map((item) => item.name).filter((item): item is string => Boolean(item)) || []
+      if (names.length) return [...new Set(names)].sort()
+    } catch {
+      /* 尝试下一个地址 */
+    }
+  }
+  return []
 }
 
 export async function testAi(config: AiConfig): Promise<string> {
