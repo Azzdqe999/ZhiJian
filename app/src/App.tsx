@@ -2148,6 +2148,12 @@ function Reader({
   const [speaking, setSpeaking] = useState(false)
   const [ttsIndex, setTtsIndex] = useState(0)
   const [ttsRate, setTtsRate] = useState(0.9)
+  const [ttsTime, setTtsTime] = useState({ current: 0, duration: 0 })
+  const [ttsScrub, setTtsScrub] = useState<number | null>(null)
+  const [ttsVolume, setTtsVolume] = useState(() => {
+    const saved = Number(localStorage.getItem('paper-tts-volume'))
+    return Number.isFinite(saved) && saved > 0 ? saved : 0.9
+  })
   const playerRef = useRef(new TtsPlayer())
   const [summary, setSummary] = useState<string | null>(null)
   const [summaryBusy, setSummaryBusy] = useState(false)
@@ -2171,14 +2177,22 @@ function Reader({
 
   useEffect(() => () => { playerRef.current.stop() }, [])
 
+  useEffect(() => {
+    playerRef.current.setVolume(ttsVolume)
+    localStorage.setItem('paper-tts-volume', String(ttsVolume))
+  }, [ttsVolume])
+
   const startTts = (from: number, rate = ttsRate) => {
     const segments = chapter ? toParagraphs(chapter.text) : []
     if (!segments.length) return
     const start = Math.max(0, Math.min(segments.length - 1, from))
     setTtsIndex(start)
+    setTtsTime({ current: 0, duration: 0 })
     setSpeaking(true)
+    playerRef.current.setVolume(ttsVolume)
     void playerRef.current.play(segments, start, rate, {
-      onSegment: (value) => setTtsIndex(value),
+      onSegment: (value) => { setTtsIndex(value); setTtsTime({ current: 0, duration: 0 }) },
+      onTime: (current, duration) => setTtsTime({ current, duration }),
       onDone: () => setSpeaking(false),
       onError: (error) => {
         setSpeaking(false)
@@ -2208,6 +2222,23 @@ function Reader({
     const next = options[(options.indexOf(ttsRate) + 1) % options.length]
     setTtsRate(next)
     if (speaking) startTts(ttsIndex, next)
+  }
+
+  const previousTts = () => startTts(Math.max(0, ttsIndex - 1))
+
+  const rewindTts = () => {
+    if (!playerRef.current.rewind(5)) startTts(Math.max(0, ttsIndex - 1))
+  }
+
+  const scrubTts = (value: number) => {
+    setTtsScrub(null)
+    startTts(Math.max(0, Math.min(paragraphs.length - 1, value)))
+  }
+
+  const formatTime = (seconds: number) => {
+    if (!Number.isFinite(seconds) || seconds <= 0) return '0:00'
+    const total = Math.floor(seconds)
+    return Math.floor(total / 60) + ':' + String(total % 60).padStart(2, '0')
   }
 
   useEffect(() => {
@@ -2643,8 +2674,32 @@ function Reader({
 
       {speaking ? (
         <div className="tts-bar" onMouseDown={(event) => event.stopPropagation()}>
-          <span>朗读 {ttsIndex + 1} / {paragraphs.length}</span>
+          <button className="tts-chip" onClick={rewindTts} title="回退 5 秒">−5s</button>
+          <button className="tts-chip" onClick={previousTts} title="上一段">上一段</button>
+          <span className="tts-count">{ttsIndex + 1} / {paragraphs.length}</span>
+          <input
+            className="tts-progress"
+            type="range"
+            min={0}
+            max={Math.max(0, paragraphs.length - 1)}
+            value={ttsScrub ?? ttsIndex}
+            onChange={(event) => setTtsScrub(Number(event.target.value))}
+            onPointerUp={() => scrubTts(ttsScrub ?? ttsIndex)}
+            onTouchEnd={() => scrubTts(ttsScrub ?? ttsIndex)}
+          />
+          <span className="tts-time">{formatTime(ttsTime.current)} / {formatTime(ttsTime.duration)}</span>
           <button className="tts-chip" onClick={changeTtsRate}>{ttsRate}×</button>
+          <label className="tts-volume">
+            音量
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={ttsVolume}
+              onChange={(event) => setTtsVolume(Number(event.target.value))}
+            />
+          </label>
           <button className="tts-chip" onClick={() => { playerRef.current.stop(); setSpeaking(false) }}>停止</button>
         </div>
       ) : null}

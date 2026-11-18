@@ -1794,3 +1794,10 @@ input { font-family: inherit; }
   font-size: 12px;
 }
 .tts-chip { padding: 4px 10px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-size: 12px; }
+
+.tts-bar { max-width: min(96vw, 900px); flex-wrap: wrap; }
+.tts-count { min-width: 54px; text-align: center; }
+.tts-time { min-width: 78px; text-align: center; font-variant-numeric: tabular-nums; color: var(--muted); }
+.tts-progress { width: 150px; accent-color: var(--accent); }
+.tts-volume { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+.tts-volume input { width: 68px; accent-color: var(--accent); }

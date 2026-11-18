@@ -211,7 +211,14 @@ export default function EpubReader(props: EpubReaderProps) {
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
   const [speaking, setSpeaking] = useState(false)
   const [ttsIndex, setTtsIndex] = useState(0)
+  const [ttsTotal, setTtsTotal] = useState(0)
+  const [ttsTime, setTtsTime] = useState({ current: 0, duration: 0 })
+  const [ttsScrub, setTtsScrub] = useState<number | null>(null)
   const [ttsRate, setTtsRate] = useState(0.9)
+  const [ttsVolume, setTtsVolume] = useState(() => {
+    const saved = Number(localStorage.getItem('paper-tts-volume'))
+    return Number.isFinite(saved) && saved > 0 ? saved : 0.9
+  })
   const playerRef = useRef(new TtsPlayer())
   const [summary, setSummary] = useState<string | null>(null)
   const [summaryBusy, setSummaryBusy] = useState(false)
@@ -243,6 +250,11 @@ export default function EpubReader(props: EpubReaderProps) {
 
   useEffect(() => () => { playerRef.current.stop() }, [])
 
+  useEffect(() => {
+    playerRef.current.setVolume(ttsVolume)
+    localStorage.setItem('paper-tts-volume', String(ttsVolume))
+  }, [ttsVolume])
+
   const startTts = (from: number, rate = ttsRate) => {
     const rendition = renditionRef.current
     const contents = rendition ? firstContents(rendition) : null
@@ -267,7 +279,10 @@ export default function EpubReader(props: EpubReaderProps) {
       doc.head.appendChild(style)
     }
     setTtsIndex(start)
+    setTtsTotal(segments.length)
+    setTtsTime({ current: 0, duration: 0 })
     setSpeaking(true)
+    playerRef.current.setVolume(ttsVolume)
     void playerRef.current.play(segments, start, rate, {
       onSegment: (value) => {
         rows.forEach((row) => row.classList.remove('paper-tts-active'))
@@ -277,7 +292,9 @@ export default function EpubReader(props: EpubReaderProps) {
           current.scrollIntoView({ block: 'center', behavior: 'smooth' })
         }
         setTtsIndex(value)
+        setTtsTime({ current: 0, duration: 0 })
       },
+      onTime: (current, duration) => setTtsTime({ current, duration }),
       onDone: () => {
         rows.forEach((row) => row.classList.remove('paper-tts-active'))
         setSpeaking(false)
@@ -307,6 +324,23 @@ export default function EpubReader(props: EpubReaderProps) {
     const next = options[(options.indexOf(ttsRate) + 1) % options.length]
     setTtsRate(next)
     if (speaking) startTts(ttsIndex, next)
+  }
+
+  const previousTts = () => startTts(Math.max(0, ttsIndex - 1))
+
+  const rewindTts = () => {
+    if (!playerRef.current.rewind(5)) startTts(Math.max(0, ttsIndex - 1))
+  }
+
+  const scrubTts = (value: number) => {
+    setTtsScrub(null)
+    startTts(Math.max(0, Math.min(Math.max(0, ttsTotal - 1), value)))
+  }
+
+  const formatTime = (seconds: number) => {
+    if (!Number.isFinite(seconds) || seconds <= 0) return '0:00'
+    const total = Math.floor(seconds)
+    return Math.floor(total / 60) + ':' + String(total % 60).padStart(2, '0')
   }
 
   useEffect(() => {
@@ -1209,8 +1243,32 @@ export default function EpubReader(props: EpubReaderProps) {
 
       {speaking ? (
         <div className="tts-bar">
-          <span>朗读 {ttsIndex + 1}</span>
+          <button className="tts-chip" onClick={rewindTts} title="回退 5 秒">−5s</button>
+          <button className="tts-chip" onClick={previousTts} title="上一段">上一段</button>
+          <span className="tts-count">{ttsIndex + 1} / {ttsTotal || '—'}</span>
+          <input
+            className="tts-progress"
+            type="range"
+            min={0}
+            max={Math.max(0, ttsTotal - 1)}
+            value={ttsScrub ?? ttsIndex}
+            onChange={(event) => setTtsScrub(Number(event.target.value))}
+            onPointerUp={() => scrubTts(ttsScrub ?? ttsIndex)}
+            onTouchEnd={() => scrubTts(ttsScrub ?? ttsIndex)}
+          />
+          <span className="tts-time">{formatTime(ttsTime.current)} / {formatTime(ttsTime.duration)}</span>
           <button className="tts-chip" onClick={changeTtsRate}>{ttsRate}×</button>
+          <label className="tts-volume">
+            音量
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={ttsVolume}
+              onChange={(event) => setTtsVolume(Number(event.target.value))}
+            />
+          </label>
           <button className="tts-chip" onClick={toggleSpeak}>停止</button>
         </div>
       ) : null}

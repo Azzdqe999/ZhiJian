@@ -12,6 +12,7 @@ type EdgeBridge = {
 
 type Handlers = {
   onSegment?: (index: number) => void
+  onTime?: (current: number, duration: number) => void
   onDone?: () => void
   onError?: (error: Error) => void
 }
@@ -71,6 +72,18 @@ function playAudio(audio: HTMLAudioElement): Promise<void> {
 export class TtsPlayer {
   private stopped = true
   private sequence = 0
+  private volume = 1
+
+  setVolume(value: number): void {
+    this.volume = Math.max(0, Math.min(1, value))
+    if (currentAudio) currentAudio.volume = this.volume
+  }
+
+  rewind(seconds: number): boolean {
+    if (!currentAudio || !Number.isFinite(currentAudio.duration)) return false
+    currentAudio.currentTime = Math.max(0, currentAudio.currentTime - seconds)
+    return true
+  }
 
   get active(): boolean {
     return !this.stopped
@@ -93,6 +106,8 @@ export class TtsPlayer {
           const audio = await next
           next = index + 1 < segments.length ? synthesizeEdge(segments[index + 1].trim(), rate) : null
           if (this.stopped || run !== this.sequence) return
+          audio.volume = this.volume
+          audio.ontimeupdate = () => handlers.onTime?.(audio.currentTime, audio.duration || 0)
           await playAudio(audio)
         }
         if (!this.stopped && run === this.sequence) handlers.onDone?.()
