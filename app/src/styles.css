@@ -1850,3 +1850,12 @@ input { font-family: inherit; }
 .ai-busy-bar .spinner { width: 14px; height: 14px; border-width: 2px; }
 .ai-busy-time { font-variant-numeric: tabular-nums; color: var(--accent); min-width: 28px; }
 .ai-busy-hint { color: var(--muted); font-size: 10px; }
+
+.relation-wrap { overflow: auto; padding: 8px 0 24px; }
+.relation-svg { width: 100%; min-width: 640px; height: auto; background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
+.relation-line { stroke: color-mix(in srgb, var(--accent) 45%, var(--line)); stroke-width: 1.2; }
+.relation-edge-label { fill: var(--muted); font-size: 10px; text-anchor: middle; font-family: var(--sans); }
+.relation-node { cursor: pointer; }
+.relation-node:hover circle { stroke: var(--ink); stroke-width: 2; }
+.relation-initial { fill: #fff; font-size: 13px; font-family: var(--serif); pointer-events: none; }
+.relation-name { fill: var(--ink); font-size: 11px; font-family: var(--sans); pointer-events: none; }

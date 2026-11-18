@@ -165,6 +165,8 @@ export type Character = {
   avatarUrl?: string
   name: string
   aliases: string[]
+  /** 人物/地名关系：name 指向本系列另一个条目的名字或别名 */
+  relations?: Array<{ name: string; label: string }>
   role: string
   bio: string
   tags: string[]

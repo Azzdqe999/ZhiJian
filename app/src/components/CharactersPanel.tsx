@@ -23,6 +23,7 @@ export default function CharactersPanel(props: Props) {
   const [query, setQuery] = useState('')
   const [kindFilter, setKindFilter] = useState<'all' | 'character' | 'place'>('all')
   const [collectionFilter, setCollectionFilter] = useState('all')
+  const [view, setView] = useState<'grid' | 'graph'>('grid')
 
   const collectionScopes = useMemo(() => {
     if (collectionFilter === 'all') return null
@@ -65,6 +66,36 @@ export default function CharactersPanel(props: Props) {
 
   const countFor = (id: string) => images.filter((image) => image.characterId === id).length
 
+  const graph = useMemo(() => {
+    const index = new Map<string, Character>()
+    const normalize = (value: string) => value.trim().toLowerCase()
+    for (const character of shown) {
+      index.set(normalize(character.name), character)
+      for (const alias of character.aliases) index.set(normalize(alias), character)
+    }
+    const edgeMap = new Map<string, { a: Character; b: Character; label: string }>()
+    for (const character of shown) {
+      for (const relation of character.relations || []) {
+        const target = index.get(normalize(relation.name))
+        if (!target || target.id === character.id) continue
+        const key = [character.id, target.id].sort().join('|')
+        if (!edgeMap.has(key)) edgeMap.set(key, { a: character, b: target, label: relation.label })
+      }
+    }
+    const linkedIds = new Set<string>()
+    for (const edge of edgeMap.values()) {
+      linkedIds.add(edge.a.id)
+      linkedIds.add(edge.b.id)
+    }
+    const nodes = linkedIds.size ? shown.filter((character) => linkedIds.has(character.id)) : shown.slice(0, 60)
+    const radius = Math.min(245, 120 + nodes.length * 5)
+    const points = nodes.map((character, index) => {
+      const angle = (Math.PI * 2 * index) / Math.max(1, nodes.length) - Math.PI / 2
+      return { character, x: 450 + Math.cos(angle) * radius, y: 300 + Math.sin(angle) * radius }
+    })
+    return { nodes, edges: [...edgeMap.values()], points }
+  }, [shown])
+
   return (
     <main className="main people-page">
       <header className="page-head">
@@ -82,6 +113,9 @@ export default function CharactersPanel(props: Props) {
           </label>
           <button className={'chip' + (markEnabled ? ' is-on' : '')} onClick={onToggleMark} title="正文人物标记总开关">
             {markEnabled ? '正文标记：开' : '正文标记：关'}
+          </button>
+          <button className={'chip' + (view === 'graph' ? ' is-on' : '')} onClick={() => setView(view === 'graph' ? 'grid' : 'graph')}>
+            {view === 'graph' ? '卡片视图' : '关系图'}
           </button>
           <button className="btn" onClick={() => props.onCreate('place')}>新建地名</button>
           <button className="btn solid" onClick={() => props.onCreate('character')}>新建人物</button>
@@ -134,6 +168,32 @@ export default function CharactersPanel(props: Props) {
             建好之后，当前章节里所有名字与别名都会标上虚线，悬停可预览。
           </p>
           <button className="btn solid" onClick={() => props.onCreate('character')}>新建人物</button>
+        </div>
+      ) : view === 'graph' ? (
+        <div className="relation-wrap">
+          <svg className="relation-svg" viewBox="0 0 900 600">
+            {graph.edges.map((edge) => {
+              const a = graph.points.find((point) => point.character.id === edge.a.id)
+              const b = graph.points.find((point) => point.character.id === edge.b.id)
+              if (!a || !b) return null
+              return (
+                <g key={edge.a.id + '-' + edge.b.id}>
+                  <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} className="relation-line" />
+                  {graph.edges.length <= 18 ? (
+                    <text x={(a.x + b.x) / 2} y={(a.y + b.y) / 2 - 4} className="relation-edge-label">{edge.label}</text>
+                  ) : null}
+                </g>
+              )
+            })}
+            {graph.points.map((point) => (
+              <g key={point.character.id} className="relation-node" onClick={() => props.onOpen(point.character)}>
+                <circle cx={point.x} cy={point.y} r={18} fill={point.character.color || '#a4552f'} />
+                <text x={point.x} y={point.y + 4} textAnchor="middle" className="relation-initial">{point.character.name.slice(0, 1)}</text>
+                <text x={point.x} y={point.y + 34} textAnchor="middle" className="relation-name">{point.character.name}</text>
+              </g>
+            ))}
+          </svg>
+          {!graph.edges.length ? <p className="setting-foot">还没有关系。打开人物档案 → 编辑 → 关系，按「对象：关系」每行一条填写。</p> : null}
         </div>
       ) : (
         <div className="char-grid">

@@ -13,6 +13,7 @@ export type CharacterDraft = {
   role: string
   bio: string
   tags: string[]
+  relations: Array<{ name: string; label: string }>
   color: string
   avatarImageId?: string
   avatarFile?: File
@@ -38,6 +39,7 @@ export default function CharacterEditor({ mode, initial, prefillName, bookId, bo
   const [role, setRole] = useState(initial?.role || '')
   const [bio, setBio] = useState(initial?.bio || '')
   const [tags, setTags] = useState((initial?.tags || []).join(' '))
+  const [relations, setRelations] = useState((initial?.relations || []).map((item) => item.name + '：' + item.label).join('\n'))
   const [color, setColor] = useState(initial?.color || DEFAULT_CHARACTER_COLOR)
   const [avatarImageId, setAvatarImageId] = useState<string | undefined>(initial?.avatarImageId)
   const [avatarFile, setAvatarFile] = useState<File | undefined>(undefined)
@@ -90,6 +92,16 @@ export default function CharacterEditor({ mode, initial, prefillName, bookId, bo
       role: role.trim(),
       bio: bio.trim(),
       tags: parseCharacterTags(tags),
+      relations: relations
+        .split(/\n+/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => {
+          const index = line.search(/[:：]/)
+          if (index < 0) return { name: line, label: '关系' }
+          return { name: line.slice(0, index).trim(), label: line.slice(index + 1).trim() || '关系' }
+        })
+        .filter((item) => item.name),
       color,
       avatarImageId: avatarFile ? undefined : avatarImageId,
       avatarFile,
@@ -203,6 +215,19 @@ export default function CharacterEditor({ mode, initial, prefillName, bookId, bo
             onChange={(event) => setTags(event.target.value)}
             placeholder="空格分隔，如：主角 刀客 北境"
           />
+        </div>
+
+        <div className="field">
+          <label htmlFor="ce-relations">关系</label>
+          <textarea
+            id="ce-relations"
+            className="textarea"
+            rows={3}
+            value={relations}
+            onChange={(event) => setRelations(event.target.value)}
+            placeholder={'每行一个，如：\n普莉希拉：主从\n菜月昴：盟友'}
+          />
+          <p className="field-hint">格式「对象：关系」，用于人物关系图。</p>
         </div>
 
         <div className="field">
