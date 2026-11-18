@@ -71,6 +71,7 @@ import CharactersPanel from './components/CharactersPanel'
 import MapViewer from './components/MapViewer'
 import ReaderSheet from './components/ReaderSheet'
 import { searchLibrary } from './lib/search'
+import { speakTts, stopTts, ttsSupported } from './lib/tts'
 import type { SearchHit } from './lib/search'
 import CharacterDrawer from './components/CharacterDrawer'
 import CharacterCard from './components/CharacterCard'
@@ -2135,6 +2136,26 @@ function Reader({
   const [attempt, setAttempt] = useState(0)
   const [selection, setSelection] = useState<{ text: string; left: number; top: number } | null>(null)
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
+  const [speaking, setSpeaking] = useState(false)
+
+  useEffect(() => () => { void stopTts() }, [])
+
+  const toggleSpeak = async () => {
+    if (speaking) {
+      await stopTts()
+      setSpeaking(false)
+      return
+    }
+    if (!chapter) return
+    try {
+      setSpeaking(true)
+      await speakTts(chapter.text, 1)
+      onToast('开始朗读')
+    } catch (error) {
+      setSpeaking(false)
+      onToast('朗读失败：' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
 
   useEffect(() => {
     void listBookmarks(book.id).then(setBookmarks)
@@ -2485,6 +2506,7 @@ function Reader({
           {aiBusy ? 'AI…' : 'AI 地名'}
         </button>
         <button className="toc-btn" onClick={onOpenMap}>地图</button>
+        {ttsSupported() ? <button className="toc-btn" onClick={() => void toggleSpeak()}>{speaking ? '停止' : '朗读'}</button> : null}
         <button className="toc-btn sheet-trigger" onClick={onOpenSheet} title="阅读设置" aria-label="阅读设置">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
         </button>

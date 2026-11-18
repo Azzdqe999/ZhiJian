@@ -11,6 +11,7 @@ import type { Bookmark, BookMeta, Character, FontFamily, Note, NoteColor, Theme 
 import NoteEditor from './NoteEditor'
 import type { NoteEditorValues } from './NoteEditor'
 import { extractCharacters, extractPlaces, loadAiConfig } from '../lib/ai'
+import { speakTts, stopTts, ttsSupported } from '../lib/tts'
 import type { AiCharacter } from '../lib/ai'
 
 type TocRow = { label: string; href: string; level: number }
@@ -207,6 +208,31 @@ export default function EpubReader(props: EpubReaderProps) {
   const [currentHref, setCurrentHref] = useState('')
   const [currentIndex, setCurrentIndex] = useState(book.chapterIndex || 0)
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
+  const [speaking, setSpeaking] = useState(false)
+
+  useEffect(() => () => { void stopTts() }, [])
+
+  const toggleSpeak = async () => {
+    if (speaking) {
+      await stopTts()
+      setSpeaking(false)
+      return
+    }
+    const rendition = renditionRef.current
+    const text = rendition ? firstContents(rendition)?.document.body.innerText || '' : ''
+    if (!text.trim()) {
+      props.onToast('这一页还没有可朗读的文字')
+      return
+    }
+    try {
+      setSpeaking(true)
+      await speakTts(text, 1)
+      props.onToast('开始朗读')
+    } catch (error) {
+      setSpeaking(false)
+      props.onToast('朗读失败：' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
 
   useEffect(() => {
     void listBookmarks(book.id).then(setBookmarks)
@@ -1021,6 +1047,7 @@ export default function EpubReader(props: EpubReaderProps) {
           {aiBusy ? 'AI…' : 'AI 地名'}
         </button>
         <button className="toc-btn" onClick={props.onOpenMap}>地图</button>
+        {ttsSupported() ? <button className="toc-btn" onClick={() => void toggleSpeak()}>{speaking ? '停止' : '朗读'}</button> : null}
         <button className="toc-btn sheet-trigger" onClick={props.onOpenSheet} title="阅读设置" aria-label="阅读设置">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
         </button>

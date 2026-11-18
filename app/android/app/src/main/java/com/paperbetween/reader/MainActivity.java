@@ -9,6 +9,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(AppUpdaterPlugin.class);
         registerPlugin(DavHttpPlugin.class);
+        registerPlugin(TtsPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
