@@ -84,8 +84,29 @@ function playAudio(audio: HTMLAudioElement): Promise<void> {
 
 export class TtsPlayer {
   private stopped = true
+  private paused = false
   private sequence = 0
   private volume = 1
+
+  get isPaused(): boolean {
+    return this.paused
+  }
+
+  pause(): void {
+    this.paused = true
+    currentAudio?.pause()
+  }
+
+  resume(): void {
+    this.paused = false
+    if (currentAudio) void currentAudio.play().catch(() => {})
+  }
+
+  togglePause(): boolean {
+    if (this.paused) this.resume()
+    else this.pause()
+    return this.paused
+  }
 
   setVolume(value: number): void {
     this.volume = Math.max(0, Math.min(1, value))
@@ -119,6 +140,7 @@ export class TtsPlayer {
     current?.stop()
     current = this
     this.stopped = false
+    this.paused = false
     const run = ++this.sequence
     try {
       if (window.paperTts && !Capacitor.isNativePlatform()) {
@@ -131,6 +153,9 @@ export class TtsPlayer {
           if (!next) next = synthesizeEdge(text, rate)
           const audio = await next
           next = index + 1 < segments.length ? synthesizeEdge(segments[index + 1].trim(), rate) : null
+          while (this.paused && !this.stopped && run === this.sequence) {
+            await new Promise((resolve) => window.setTimeout(resolve, 120))
+          }
           if (this.stopped || run !== this.sequence) return
           if (audio) {
             audio.volume = this.volume
@@ -174,6 +199,7 @@ export class TtsPlayer {
 
   stop(): void {
     this.stopped = true
+    this.paused = false
     this.sequence += 1
     if (current === this) current = null
     if (currentAudio) {

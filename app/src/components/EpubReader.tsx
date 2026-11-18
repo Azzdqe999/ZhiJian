@@ -261,6 +261,9 @@ export default function EpubReader(props: EpubReaderProps) {
   const [ttsTime, setTtsTime] = useState({ current: 0, duration: 0 })
   const [ttsScrub, setTtsScrub] = useState<number | null>(null)
   const [ttsRate, setTtsRate] = useState(0.9)
+  const [ttsPaused, setTtsPaused] = useState(false)
+  const [ttsOverlay, setTtsOverlay] = useState<{ prev: string; current: string; next: string } | null>(null)
+  const overlayDismissed = useRef(false)
   const ttsParaRef = useRef(0)
   const ttsSpeakingRef = useRef(false)
   const [ttsVolume, setTtsVolume] = useState(() => {
@@ -317,6 +320,25 @@ export default function EpubReader(props: EpubReaderProps) {
     localStorage.setItem('paper-tts-volume', String(ttsVolume))
   }, [ttsVolume])
 
+  useEffect(() => {
+    if (!speaking || !ttsOverlay || overlayDismissed.current) {
+      void window.paperOverlay?.hide()
+      return
+    }
+    void window.paperOverlay?.update({ ...ttsOverlay, title: book.title, paused: ttsPaused })
+  }, [speaking, ttsPaused, ttsOverlay, book.title])
+
+  useEffect(() => {
+    const off = window.paperOverlay?.onAction((action) => {
+      if (action === 'toggle') setTtsPaused(playerRef.current.togglePause())
+      if (action === 'close') {
+        overlayDismissed.current = true
+        void window.paperOverlay?.hide()
+      }
+    })
+    return () => off?.()
+  }, [])
+
   const startTts = (from: number, rate = ttsRate) => {
     const rendition = renditionRef.current
     const contents = rendition ? firstContents(rendition) : null
@@ -347,6 +369,8 @@ export default function EpubReader(props: EpubReaderProps) {
     }
     setTtsIndex(start)
     setTtsTotal(segments.length)
+    setTtsPaused(false)
+    overlayDismissed.current = false
     setTtsTime({ current: 0, duration: 0 })
     ttsSpeakingRef.current = true
     ttsParaRef.current = segments[start]?.para ?? 0
@@ -360,7 +384,13 @@ export default function EpubReader(props: EpubReaderProps) {
           current.classList.add('paper-tts-active')
           current.scrollIntoView({ block: 'center', behavior: 'smooth' })
         }
-        ttsParaRef.current = segments[value]?.para ?? 0
+        const para = segments[value]?.para ?? 0
+        ttsParaRef.current = para
+        setTtsOverlay({
+          prev: (rows[para - 1]?.textContent || '').trim(),
+          current: (rows[para]?.textContent || '').trim(),
+          next: (rows[para + 1]?.textContent || '').trim(),
+        })
         setTtsIndex(value)
         setTtsTime({ current: 0, duration: 0 })
       },
@@ -368,6 +398,7 @@ export default function EpubReader(props: EpubReaderProps) {
       onDone: () => {
         ttsSpeakingRef.current = false
         rows.forEach((row) => row.classList.remove('paper-tts-active'))
+        setTtsOverlay(null)
         setSpeaking(false)
       },
       onError: (error) => {
@@ -398,6 +429,10 @@ export default function EpubReader(props: EpubReaderProps) {
     const next = options[(options.indexOf(ttsRate) + 1) % options.length]
     setTtsRate(next)
     if (speaking) startTts(ttsIndex, next)
+  }
+
+  const toggleTtsPause = () => {
+    setTtsPaused(playerRef.current.togglePause())
   }
 
   const rewindTts = () => {
@@ -1404,6 +1439,7 @@ export default function EpubReader(props: EpubReaderProps) {
 
       {speaking ? (
         <div className="tts-bar">
+          <button className="tts-chip" onClick={toggleTtsPause}>{ttsPaused ? '继续' : '暂停'}</button>
           <button className="tts-chip" onClick={rewindTts} title="回退 5 秒">−5s</button>
           <button className="tts-chip" onClick={forwardTts} title="前进 5 秒">+5s</button>
           <span className="tts-count">{ttsIndex + 1} / {ttsTotal || '—'}</span>

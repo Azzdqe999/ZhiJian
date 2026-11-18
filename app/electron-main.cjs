@@ -38,6 +38,8 @@ function applyAlwaysOnTop(win, value) {
 
 let ttsProcess = null
 let ttsSequence = 0
+let overlayWindow = null
+let overlayOwner = null
 const ttsWaiters = new Map()
 
 function ttsHelperPath() {
@@ -74,6 +76,52 @@ function ensureTtsProcess() {
   })
   return ttsProcess
 }
+
+function ensureOverlayWindow() {
+  if (overlayWindow && !overlayWindow.isDestroyed()) return overlayWindow
+  overlayWindow = new BrowserWindow({
+    width: 520,
+    height: 230,
+    frame: false,
+    resizable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    show: false,
+    hasShadow: true,
+    backgroundColor: '#1b1a18',
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      preload: path.join(__dirname, 'overlay-preload.cjs'),
+    },
+  })
+  overlayWindow.setAlwaysOnTop(true, 'screen-saver')
+  overlayWindow.loadFile(path.join(__dirname, 'tts-overlay.html'))
+  overlayWindow.once('ready-to-show', () => overlayWindow?.showInactive())
+  overlayWindow.on('closed', () => { overlayWindow = null; overlayOwner = null })
+  const area = require('electron').screen.getPrimaryDisplay().workArea
+  overlayWindow.setPosition(area.x + area.width - 540, area.y + area.height - 250)
+  return overlayWindow
+}
+
+ipcMain.handle('paper-tts:overlay', (event, payload) => {
+  const win = ensureOverlayWindow()
+  overlayOwner = event.sender
+  win.showInactive()
+  win.webContents.send('paper-overlay:update', payload)
+  return true
+})
+
+ipcMain.handle('paper-tts:overlay:hide', () => {
+  if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.hide()
+  return true
+})
+
+ipcMain.handle('paper-tts:overlay:action', (_event, action) => {
+  if (action === 'close' && overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.hide()
+  if (overlayOwner && !overlayOwner.isDestroyed()) overlayOwner.send('paper-tts:action', action)
+  return true
+})
 
 ipcMain.handle('paper-tts:speak', async (_event, options) => {
   const process = ensureTtsProcess()

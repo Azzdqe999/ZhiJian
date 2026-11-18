@@ -2159,8 +2159,11 @@ function Reader({
   const [speaking, setSpeaking] = useState(false)
   const [ttsIndex, setTtsIndex] = useState(0)
   const [ttsRate, setTtsRate] = useState(0.9)
+  const [ttsPaused, setTtsPaused] = useState(false)
   const [ttsTime, setTtsTime] = useState({ current: 0, duration: 0 })
   const [ttsScrub, setTtsScrub] = useState<number | null>(null)
+  const [ttsOverlay, setTtsOverlay] = useState<{ prev: string; current: string; next: string } | null>(null)
+  const overlayDismissed = useRef(false)
   const [ttsVolume, setTtsVolume] = useState(() => {
     const saved = Number(localStorage.getItem('paper-tts-volume'))
     return Number.isFinite(saved) && saved > 0 ? saved : 0.9
@@ -2193,17 +2196,44 @@ function Reader({
     localStorage.setItem('paper-tts-volume', String(ttsVolume))
   }, [ttsVolume])
 
+  useEffect(() => {
+    if (!speaking || !ttsOverlay || overlayDismissed.current) {
+      void window.paperOverlay?.hide()
+      return
+    }
+    void window.paperOverlay?.update({ ...ttsOverlay, title: book.title, paused: ttsPaused })
+  }, [speaking, ttsPaused, ttsOverlay, book.title])
+
+  useEffect(() => {
+    const off = window.paperOverlay?.onAction((action) => {
+      if (action === 'toggle') setTtsPaused(playerRef.current.togglePause())
+      if (action === 'close') {
+        overlayDismissed.current = true
+        void window.paperOverlay?.hide()
+      }
+    })
+    return () => off?.()
+  }, [])
+
   const startTts = (from: number, rate = ttsRate) => {
-    const segments = chapter ? buildTtsSegments(toParagraphs(chapter.text)) : []
+    const raw = chapter ? toParagraphs(chapter.text) : []
+    const segments = buildTtsSegments(raw)
     if (!segments.length) return
     const found = segments.findIndex((item) => item.para >= from)
     const start = Math.max(0, Math.min(segments.length - 1, found >= 0 ? found : segments.length - 1))
     setTtsIndex(start)
+    setTtsPaused(false)
+    overlayDismissed.current = false
     setTtsTime({ current: 0, duration: 0 })
     setSpeaking(true)
     playerRef.current.setVolume(ttsVolume)
     void playerRef.current.play(segments.map((item) => item.text), start, rate, {
-      onSegment: (value) => { setTtsIndex(value); setTtsTime({ current: 0, duration: 0 }) },
+      onSegment: (value) => {
+        const para = segments[value]?.para ?? 0
+        setTtsIndex(value)
+        setTtsOverlay({ prev: raw[para - 1] || '', current: raw[para] || '', next: raw[para + 1] || '' })
+        setTtsTime({ current: 0, duration: 0 })
+      },
       onTime: (current, duration) => setTtsTime({ current, duration }),
       onNotice: onToast,
       onDone: () => setSpeaking(false),
@@ -2235,6 +2265,10 @@ function Reader({
     const next = options[(options.indexOf(ttsRate) + 1) % options.length]
     setTtsRate(next)
     if (speaking) startTts(ttsIndex, next)
+  }
+
+  const toggleTtsPause = () => {
+    setTtsPaused(playerRef.current.togglePause())
   }
 
   const rewindTts = () => {
@@ -2708,6 +2742,7 @@ function Reader({
 
       {speaking ? (
         <div className="tts-bar" onMouseDown={(event) => event.stopPropagation()}>
+          <button className="tts-chip" onClick={toggleTtsPause}>{ttsPaused ? '继续' : '暂停'}</button>
           <button className="tts-chip" onClick={rewindTts} title="回退 5 秒">−5s</button>
           <button className="tts-chip" onClick={forwardTts} title="前进 5 秒">+5s</button>
           <span className="tts-count">{ttsIndex + 1} / {ttsSegments.length}</span>
@@ -2734,7 +2769,7 @@ function Reader({
               onChange={(event) => setTtsVolume(Number(event.target.value))}
             />
           </label>
-          <button className="tts-chip" onClick={() => { playerRef.current.stop(); setSpeaking(false) }}>停止</button>
+          <button className="tts-chip" onClick={() => { playerRef.current.stop(); setTtsPaused(false); setTtsOverlay(null); setSpeaking(false) }}>停止</button>
         </div>
       ) : null}
 
