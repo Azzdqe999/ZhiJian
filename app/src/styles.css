@@ -1828,3 +1828,14 @@ input { font-family: inherit; }
 .duplicate-group { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
 .duplicate-title { margin-bottom: 6px; font-family: var(--serif); font-size: 14px; }
 .duplicate-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 5px 0; font-size: 11px; color: var(--muted); }
+
+.map-search { width: 100%; margin: 0 0 8px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); color: var(--ink); font-size: 11px; }
+.map-pin { display: inline-flex; align-items: center; gap: 4px; width: auto; min-width: 24px; height: 26px; padding: 0 7px; border-radius: 13px; line-height: 22px; }
+.map-pin-dot { width: 6px; height: 6px; border-radius: 50%; background: #fff; flex: 0 0 6px; }
+.map-pin-label { font-family: var(--sans); font-size: 10px; white-space: nowrap; }
+.map-tool.is-on { border-color: var(--accent); color: var(--accent); }
+@media (max-width: 760px) {
+  .map-pin { height: 30px; padding: 0 8px; border-radius: 15px; }
+  .map-pin-label { font-size: 10px; }
+  .map-search { display: none; }
+}

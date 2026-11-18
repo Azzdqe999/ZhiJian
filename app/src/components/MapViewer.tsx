@@ -30,6 +30,8 @@ export default function MapViewer({ bookId, bookTitle, places, onOpenPlace, onCl
   const suppressPinClick = useRef(false)
   const [pins, setPins] = useState<MapPin[]>([])
   const [pinPlaceId, setPinPlaceId] = useState('')
+  const [placeQuery, setPlaceQuery] = useState('')
+  const [showLabels, setShowLabels] = useState(() => window.innerWidth > 760)
   const inputRef = useRef<HTMLInputElement | null>(null)
   const canvasRef = useRef<HTMLDivElement | null>(null)
   const longPressRef = useRef<number | null>(null)
@@ -132,7 +134,13 @@ export default function MapViewer({ bookId, bookTitle, places, onOpenPlace, onCl
         <div className="map-body">
           <aside className="map-places">
             <div className="map-places-title">地名 · 选一个再点地图</div>
-            {places.length ? places.map((place) => (
+            <input
+              className="map-search"
+              placeholder="筛选地名"
+              value={placeQuery}
+              onChange={(event) => setPlaceQuery(event.target.value)}
+            />
+            {places.length ? places.filter((place) => !placeQuery.trim() || place.name.includes(placeQuery.trim())).map((place) => (
               <button
                 key={place.id}
                 className={'map-place' + (pinPlaceId === place.id ? ' is-active' : '')}
@@ -230,7 +238,8 @@ export default function MapViewer({ bookId, bookTitle, places, onOpenPlace, onCl
                       void putMapPin({ ...current, x: drag.x, y: drag.y, updatedAt: Date.now() }).then(reloadPins)
                     }}
                   >
-                    <span>{pin.label.slice(0, 1)}</span>
+                    <span className="map-pin-dot" />
+                    {showLabels ? <span className="map-pin-label">{pin.label}</span> : null}
                   </button>
                 ))}
               </div>
@@ -251,6 +260,7 @@ export default function MapViewer({ bookId, bookTitle, places, onOpenPlace, onCl
           <span className="map-zoom">{Math.round(zoom * 100)}%</span>
           <button className="map-tool" onClick={() => setZoom((value) => Math.min(4, value + 0.2))}>+</button>
           <button className="map-tool" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }) }}>1:1</button>
+          <button className={'map-tool' + (showLabels ? ' is-on' : '')} onClick={() => setShowLabels((value) => !value)}>标签</button>
           {current ? <button className="map-tool danger" onClick={() => void removeCurrent()}>删除这张</button> : null}
         </div>
 
