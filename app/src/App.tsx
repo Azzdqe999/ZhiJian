@@ -72,6 +72,7 @@ import MapViewer from './components/MapViewer'
 import ReaderSheet from './components/ReaderSheet'
 import { searchLibrary } from './lib/search'
 import { TtsPlayer, ttsSupported } from './lib/tts'
+import { setVolumePaging } from './lib/keys'
 import { buildTtsSegments } from './lib/tts-text'
 import type { SearchHit } from './lib/search'
 import CharacterDrawer from './components/CharacterDrawer'
@@ -188,6 +189,7 @@ function App() {
   const [readingId, setReadingId] = useState<string | null>(null)
   const [fontSize, setFontSize] = useState(19)
   const [readingMode, setReadingMode] = useState<'scroll' | 'paged'>('scroll')
+  const [volumePaging, setVolumePaging] = useState(false)
   const [lineHeight, setLineHeight] = useState(1.95)
   const [paragraphGap, setParagraphGap] = useState(0.7)
   const [pageMargin, setPageMargin] = useState(30)
@@ -404,6 +406,7 @@ function App() {
           if (settings.fontFamily) setFontFamily(settings.fontFamily)
           if (typeof settings.characterMark === 'boolean') setMarkEnabled(settings.characterMark)
           if (settings.readingMode === 'paged' || settings.readingMode === 'scroll') setReadingMode(settings.readingMode)
+          if (typeof settings.volumePaging === 'boolean') setVolumePaging(settings.volumePaging)
           if (typeof settings.lineHeight === 'number') setLineHeight(settings.lineHeight)
           if (typeof settings.paragraphGap === 'number') setParagraphGap(settings.paragraphGap)
           if (typeof settings.pageMargin === 'number') setPageMargin(settings.pageMargin)
@@ -435,7 +438,7 @@ function App() {
   useEffect(() => {
     if (!booted) return
     const timer = window.setTimeout(() => {
-      saveSettings({ fontSize, theme, fontFamily, characterMark: markEnabled, readingMode, lineHeight, paragraphGap, pageMargin, textIndent, textAlign }).catch(() => {})
+      saveSettings({ fontSize, theme, fontFamily, characterMark: markEnabled, readingMode, volumePaging, lineHeight, paragraphGap, pageMargin, textIndent, textAlign }).catch(() => {})
     }, 160)
     return () => window.clearTimeout(timer)
   }, [booted, fontSize, theme, fontFamily, markEnabled])
@@ -1475,6 +1478,7 @@ function App() {
             onAiCharacters={(list, kind) => void addAiCharacters(readingScope, list, kind)}
             onOpenMap={() => setMapBookId(readingScope)}
             readingMode={readingMode}
+            volumePaging={volumePaging}
             lineHeight={lineHeight}
             paragraphGap={paragraphGap}
             pageMargin={pageMargin}
@@ -1509,6 +1513,7 @@ function App() {
             onToast={showToast}
             onOpenMap={() => setMapBookId(readingScope)}
             readingMode={readingMode}
+            volumePaging={volumePaging}
             onOpenSheet={() => setReaderSheetOpen(true)}
           />
         )
@@ -1780,6 +1785,9 @@ function App() {
           onToggleIndent={() => setTextIndent((value) => !value)}
           textAlign={textAlign}
           onTextAlign={setTextAlign}
+          volumePaging={volumePaging}
+          onVolumePaging={setVolumePaging}
+          showVolumePaging={Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android'}
           onClose={() => setReaderSheetOpen(false)}
         />
       ) : null}
@@ -2111,6 +2119,7 @@ type ReaderProps = {
   onToast: (message: string) => void
   onOpenMap: () => void
   readingMode: 'scroll' | 'paged'
+  volumePaging: boolean
   onOpenSheet: () => void
 }
 
@@ -2135,6 +2144,7 @@ function Reader({
   onToast,
   onOpenMap,
   readingMode,
+  volumePaging,
   onOpenSheet,
 }: ReaderProps) {
   const [index, setIndex] = useState(() => Math.min(Math.max(0, book.chapterIndex), Math.max(0, book.chapterCount - 1)))
@@ -2489,7 +2499,24 @@ function Reader({
     page.style.scrollBehavior = previous
   }, [])
 
-
+  useEffect(() => {
+    void setVolumePaging(volumePaging)
+    if (!volumePaging) return
+    const onVolume = (event: Event) => {
+      const direction = Number((event as CustomEvent<{ direction?: number }>).detail?.direction) || 1
+      if (readingMode === 'paged') {
+        turnPage(direction)
+        return
+      }
+      const page = pageRef.current
+      if (page) page.scrollBy({ top: direction * page.clientHeight * 0.9, behavior: 'smooth' })
+    }
+    window.addEventListener('paper:volume', onVolume)
+    return () => {
+      window.removeEventListener('paper:volume', onVolume)
+      void setVolumePaging(false)
+    }
+  }, [volumePaging, readingMode, turnPage])
 
   useEffect(() => {
     if (readingMode !== 'paged') return

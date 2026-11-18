@@ -22,6 +22,9 @@ type Props = {
   onToggleIndent: () => void
   textAlign: 'left' | 'justify'
   onTextAlign: (value: 'left' | 'justify') => void
+  volumePaging: boolean
+  onVolumePaging: (value: boolean) => void
+  showVolumePaging: boolean
   onClose: () => void
 }
 
@@ -46,6 +49,9 @@ export default function ReaderSheet({
   onToggleIndent,
   textAlign,
   onTextAlign,
+  volumePaging,
+  onVolumePaging,
+  showVolumePaging,
   onClose,
 }: Props) {
   return (
@@ -121,6 +127,16 @@ export default function ReaderSheet({
             <button className={'sheet-chip' + (readingMode === 'paged' ? ' is-on' : '')} onClick={() => onReadingMode('paged')}>翻页</button>
           </div>
         </div>
+        {showVolumePaging ? (
+          <div className="reader-sheet-row">
+            <span className="reader-sheet-label">音量键</span>
+            <div className="reader-sheet-controls">
+              <button className={'sheet-chip' + (volumePaging ? ' is-on' : '')} onClick={() => onVolumePaging(!volumePaging)}>
+                {volumePaging ? '翻页已开启' : '翻页已关闭'}
+              </button>
+            </div>
+          </div>
+        ) : null}
         <div className="reader-sheet-row">
           <span className="reader-sheet-label">AI 抽取</span>
           <div className="reader-sheet-controls">

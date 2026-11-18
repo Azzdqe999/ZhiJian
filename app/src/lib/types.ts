@@ -57,6 +57,7 @@ export type Settings = {
   /** M3：正文人物标记的总开关，默认开 */
   characterMark?: boolean
   readingMode?: 'scroll' | 'paged'
+  volumePaging?: boolean
   lineHeight?: number
   paragraphGap?: number
   pageMargin?: number

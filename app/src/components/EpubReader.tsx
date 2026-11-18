@@ -12,6 +12,7 @@ import NoteEditor from './NoteEditor'
 import type { NoteEditorValues } from './NoteEditor'
 import { extractCharacters, extractPlaces, loadAiConfig, summarizeChapter } from '../lib/ai'
 import { TtsPlayer, ttsSupported } from '../lib/tts'
+import { setVolumePaging } from '../lib/keys'
 import { buildTtsSegments } from '../lib/tts-text'
 import type { AiCharacter } from '../lib/ai'
 
@@ -64,6 +65,7 @@ type EpubReaderProps = {
   onAiCharacters: (list: AiCharacter[], kind: 'character' | 'place') => void
   onOpenMap: () => void
   readingMode: 'scroll' | 'paged'
+  volumePaging: boolean
   lineHeight: number
   paragraphGap: number
   pageMargin: number
@@ -295,6 +297,20 @@ export default function EpubReader(props: EpubReaderProps) {
   }
 
   useEffect(() => () => { playerRef.current.stop() }, [])
+
+  useEffect(() => {
+    void setVolumePaging(props.volumePaging)
+    if (!props.volumePaging) return
+    const onVolume = (event: Event) => {
+      const direction = Number((event as CustomEvent<{ direction?: number }>).detail?.direction) || 1
+      scrollEpubPage(renditionRef.current, direction)
+    }
+    window.addEventListener('paper:volume', onVolume)
+    return () => {
+      window.removeEventListener('paper:volume', onVolume)
+      void setVolumePaging(false)
+    }
+  }, [props.volumePaging])
 
   useEffect(() => {
     playerRef.current.setVolume(ttsVolume)
