@@ -457,6 +457,20 @@ export default function SettingsPanel(props: Props) {
             上次同步：{sync.lastSummary.books} 本书 · 上传 {sync.lastSummary.uploaded} · 下载 {sync.lastSummary.downloaded} · 跳过 {sync.lastSummary.skipped} · {new Date(sync.lastSummary.at).toLocaleString()}
           </p>
         ) : null}
+        {sync.lastSummary?.conflicts?.length ? (
+          <div className="sync-conflicts">
+            <div className="sync-conflicts-title">阅读进度冲突 · {sync.lastSummary.conflicts.length}</div>
+            {sync.lastSummary.conflicts.map((conflict) => (
+              <div className="sync-conflict-row" key={conflict.bookId}>
+                <span className="sync-conflict-book">{conflict.title}</span>
+                <span>本地 第 {conflict.local.chapterIndex + 1} 章</span>
+                <span>远程 第 {conflict.remote.chapterIndex + 1} 章</span>
+                <span className="sync-conflict-choice">已保留{conflict.chosen === 'local' ? '本地' : '远程'}</span>
+              </div>
+            ))}
+            <p className="setting-foot">当前按最近阅读时间保留；担心覆盖可先导出备份。</p>
+          </div>
+        ) : null}
       </section>
 
       {isNativeUpdater() ? (

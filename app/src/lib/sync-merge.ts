@@ -5,9 +5,40 @@ import type {
   Note,
   SyncImageMeta,
   SyncMapMeta,
+  SyncConflict,
   SyncSnapshot,
   SyncTombstone,
 } from './types'
+
+export function detectBookConflicts(local: SyncSnapshot, remotes: SyncSnapshot[]): SyncConflict[] {
+  const remoteBooks = new Map<string, BookMeta>()
+  for (const snap of remotes) {
+    for (const book of snap.books) {
+      const prev = remoteBooks.get(book.id)
+      if (!prev || book.lastReadAt > prev.lastReadAt) remoteBooks.set(book.id, book)
+    }
+  }
+  const conflicts: SyncConflict[] = []
+  for (const mine of local.books) {
+    if (mine.deletedAt) continue
+    const theirs = remoteBooks.get(mine.id)
+    if (!theirs || theirs.deletedAt) continue
+    if (!mine.lastReadAt || !theirs.lastReadAt) continue
+    const moved = mine.chapterIndex !== theirs.chapterIndex ||
+      Math.abs((mine.scrollRatio || 0) - (theirs.scrollRatio || 0)) > 0.02 ||
+      (!!mine.epubCfi && !!theirs.epubCfi && mine.epubCfi !== theirs.epubCfi)
+    if (!moved) continue
+    conflicts.push({
+      bookId: mine.id,
+      title: mine.title,
+      local: { chapterIndex: mine.chapterIndex, scrollRatio: mine.scrollRatio || 0, epubCfi: mine.epubCfi, lastReadAt: mine.lastReadAt },
+      remote: { chapterIndex: theirs.chapterIndex, scrollRatio: theirs.scrollRatio || 0, epubCfi: theirs.epubCfi, lastReadAt: theirs.lastReadAt },
+      chosen: mine.lastReadAt >= theirs.lastReadAt ? 'local' : 'remote',
+    })
+    if (conflicts.length >= 50) break
+  }
+  return conflicts
+}
 
 export function mergeSnapshots(local: SyncSnapshot, remotes: SyncSnapshot[]): SyncSnapshot {
   const all = [local, ...remotes]

@@ -20,6 +20,18 @@ type Props = {
   onUnrelate: (a: Character, b: Character) => void
 }
 
+function relationInitials(name: string): string {
+  let text = name.trim()
+  // 去掉开头的称号括号，如「『色欲魔女』卡蜜拉」留下「卡蜜拉」
+  const stripped = text.replace(/^[『「【\[(（][^』」】\])）]*[』」】\])）]\s*/, '').trim()
+  if (stripped) text = stripped
+  const letters = text.replace(/[^\p{L}\p{N}]/gu, '')
+  if (!letters) return name.replace(/[^\p{L}\p{N}]/gu, '').slice(0, 2)
+  const chars = [...letters]
+  if (/^[A-Za-z]/.test(letters)) return chars.slice(0, 2).join('').toUpperCase()
+  return chars.slice(0, 2).join('')
+}
+
 export default function CharactersPanel(props: Props) {
   const { books, collections, characters, images, bookId, onBookChange, markEnabled, onToggleMark } = props
   const [query, setQuery] = useState('')
@@ -27,7 +39,7 @@ export default function CharactersPanel(props: Props) {
   const [collectionFilter, setCollectionFilter] = useState('all')
   const [view, setView] = useState<'grid' | 'graph'>('grid')
   const [selectedId, setSelectedId] = useState('')
-  const [hover, setHover] = useState<{ id: string; name: string; x: number; y: number } | null>(null)
+  const [hoverId, setHoverId] = useState('')
   const [relationEditor, setRelationEditor] = useState<{ a: Character; b: Character; label: string } | null>(null)
 
   const collectionScopes = useMemo(() => {
@@ -271,17 +283,15 @@ export default function CharactersPanel(props: Props) {
                   }
                 }}
                 onDoubleClick={() => props.onOpen(point.character)}
-                onPointerEnter={(event) => setHover({ id: point.character.id, name: point.character.name, x: event.clientX, y: event.clientY })}
-                onPointerMove={(event) => setHover({ id: point.character.id, name: point.character.name, x: event.clientX, y: event.clientY })}
-                onPointerLeave={() => setHover(null)}
+                onPointerEnter={() => setHoverId(point.character.id)}
+                onPointerLeave={() => setHoverId('')}
               >
                 <circle cx={point.x} cy={point.y} r={18} fill={point.character.color || '#a4552f'} />
-                <text x={point.x} y={point.y + 4} textAnchor="middle" className="relation-initial">{point.character.name.slice(0, 1)}</text>
-                {graph.nodes.length <= 40 || selectedId === point.character.id || hover?.id === point.character.id ? <text x={point.x} y={point.y + 34} textAnchor="middle" className="relation-name">{point.character.name}</text> : null}
+                <text x={point.x} y={point.y + 4} textAnchor="middle" className="relation-initial">{relationInitials(point.character.name)}</text>
+                {graph.nodes.length <= 40 || selectedId === point.character.id || hoverId === point.character.id ? <text x={point.x} y={point.y + 34} textAnchor="middle" className="relation-name">{point.character.name}</text> : null}
               </g>
             ))}
           </svg>
-          {hover ? <div className="relation-tooltip" style={{ left: hover.x + 14, top: hover.y + 14 }}>{hover.name}</div> : null}
           {shown.length > 80 ? <p className="setting-foot">只显示前 80 个，用搜索缩小范围后再连线。</p> : null}
           {!graph.edges.length ? <p className="setting-foot">还没有关系。点两个节点即可建立第一条关系。</p> : null}
 

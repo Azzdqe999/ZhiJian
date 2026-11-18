@@ -67,6 +67,14 @@ export type Settings = {
   sync?: SyncConfig
 }
 
+export type SyncConflict = {
+  bookId: string
+  title: string
+  local: { chapterIndex: number; scrollRatio: number; epubCfi?: string; lastReadAt: number }
+  remote: { chapterIndex: number; scrollRatio: number; epubCfi?: string; lastReadAt: number }
+  chosen: 'local' | 'remote'
+}
+
 export type SyncConfig = {
   url: string
   user: string
@@ -84,6 +92,7 @@ export type SyncConfig = {
     uploaded: number
     downloaded: number
     skipped: number
+    conflicts?: SyncConflict[]
   }
 }
 

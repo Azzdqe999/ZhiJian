@@ -24,9 +24,10 @@ import {
   deleteCharacterImage,
   deleteNote,
 } from './store'
-import { mergeSnapshots } from './sync-merge'
+import { detectBookConflicts, mergeSnapshots } from './sync-merge'
 import { sha256 } from './hash'
 import type {
+  SyncConflict,
   SyncConfig,
   SyncImageMeta,
   SyncSnapshot,
@@ -290,6 +291,7 @@ export type SyncResult = {
   skipped: number
   remotes: number
   registry: string[]
+  conflicts: SyncConflict[]
   at: number
 }
 
@@ -327,6 +329,7 @@ export async function syncNow(): Promise<SyncResult> {
     }
   }
 
+  const conflicts = detectBookConflicts(local, remotes)
   const merged = dedupeByContent(mergeSnapshots(local, remotes))
   await applySnapshot(merged)
 
@@ -410,7 +413,7 @@ export async function syncNow(): Promise<SyncResult> {
   await saveSyncConfig({
     ...config,
     lastSyncAt: at,
-    lastSummary: { at, books: merged.books.length, uploaded, downloaded, skipped },
+    lastSummary: { at, books: merged.books.length, uploaded, downloaded, skipped, conflicts: conflicts.slice(0, 20) },
   })
 
   return {
@@ -423,6 +426,7 @@ export async function syncNow(): Promise<SyncResult> {
     skipped,
     remotes: remotes.length,
     registry,
+    conflicts,
     at,
   }
 }
