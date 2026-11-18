@@ -2695,10 +2695,8 @@ function Reader({
                   onToast('AI 没有识别到人物')
                   return
                 }
-                const names = list.map((item) => item.name).join('、')
-                if (window.confirm('识别到 ' + list.length + ' 位人物：' + names + '\n\n加入人物卡？')) {
-                  onAiCharacters(list, 'character')
-                }
+                onAiCharacters(list, 'character')
+                onToast('AI 已加入 ' + list.length + ' 位人物')
               } catch (error) {
                 onToast('AI 失败：' + (error instanceof Error ? error.message : String(error)))
               } finally {
@@ -2731,10 +2729,8 @@ function Reader({
                   onToast('AI 没有识别到地名')
                   return
                 }
-                const names = list.map((item) => item.name).join('、')
-                if (window.confirm('识别到 ' + list.length + ' 个地名：' + names + '\n\n加入地名库？')) {
-                  onAiCharacters(list, 'place')
-                }
+                onAiCharacters(list, 'place')
+                onToast('AI 已加入 ' + list.length + ' 个地名')
               } catch (error) {
                 onToast('AI 失败：' + (error instanceof Error ? error.message : String(error)))
               } finally {

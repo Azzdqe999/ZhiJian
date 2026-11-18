@@ -1,9 +1,10 @@
-import { Fragment, useRef } from 'react'
+import { Fragment, useRef, useState } from 'react'
 import type { BookMeta, Character, CharacterAppearance, CharacterImage, Note } from '../lib/types'
 import { excerpt, formatTime } from '../lib/notes'
 import { imageFilesFromDataTransfer } from '../lib/images'
 import { useObjectUrl } from '../lib/objectUrl'
 import CharacterAvatar from './CharacterAvatar'
+import { analyzeCharacter, loadAiConfig } from '../lib/ai'
 
 type Props = {
   character: Character
@@ -61,9 +62,28 @@ function ImageThumb({ image, onOpen }: { image: CharacterImage; onOpen: () => vo
 export default function CharacterDrawer(props: Props) {
   const { character, book, images, notes, appearances, appearancesLoading } = props
   const fileRef = useRef<HTMLInputElement | null>(null)
+  const [aiText, setAiText] = useState('')
+  const [aiBusy, setAiBusy] = useState(false)
   const related = notes
     .filter((note) => (note.characterIds || []).includes(character.id))
     .sort((a, b) => b.createdAt - a.createdAt)
+
+  const runAnalysis = async () => {
+    if (aiBusy) return
+    setAiBusy(true)
+    try {
+      const config = await loadAiConfig()
+      if (!config.apiKey.trim() && config.provider !== 'ollama') {
+        setAiText('先在设置里配置 AI。')
+        return
+      }
+      setAiText(await analyzeCharacter(config, character, related, book?.title))
+    } catch (error) {
+      setAiText('分析失败：' + (error instanceof Error ? error.message : String(error)))
+    } finally {
+      setAiBusy(false)
+    }
+  }
 
   const pick = (files: File[]) => {
     const picked = files.filter((file) => file.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp|avif)$/i.test(file.name))
@@ -107,6 +127,18 @@ export default function CharacterDrawer(props: Props) {
           </div>
 
           <Bio bio={character.bio} />
+
+          <section className="cd-section">
+            <div className="cd-section-head">
+              <h3>AI 分析</h3>
+              <div className="cd-section-actions">
+                <button className="btn small" onClick={() => void runAnalysis()} disabled={aiBusy}>
+                  {aiBusy ? '分析中…' : '生成分析'}
+                </button>
+              </div>
+            </div>
+            {aiText ? <div className="cd-ai">{aiText}</div> : <p className="cd-empty-inline">根据简介、别名、标签和相关笔记生成角色分析；不会编造资料外剧情。</p>}
+          </section>
 
           <section className="cd-section">
             <div className="cd-section-head">

@@ -71,11 +71,20 @@ async function postJson(config: AiConfig, payload: unknown): Promise<{ status: n
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (config.apiKey.trim()) headers.Authorization = 'Bearer ' + config.apiKey.trim()
   const body = JSON.stringify(payload)
+  const timeout = new Promise<never>((_, reject) => {
+    window.setTimeout(() => reject(new Error('AI 请求超时，本地模型可换更小的分段或模型')), 120000)
+  })
   if (window.paperSync) {
-    const res = await window.paperSync.request({ method: 'POST', url: endpoint(config), headers, body })
+    const res = await Promise.race([
+      window.paperSync.request({ method: 'POST', url: endpoint(config), headers, body }),
+      timeout,
+    ])
     return { status: res.status, text: decodeBody(res.body) }
   }
-  const res = await fetch(endpoint(config), { method: 'POST', headers, body })
+  const res = await Promise.race([
+    fetch(endpoint(config), { method: 'POST', headers, body }),
+    timeout,
+  ])
   return { status: res.status, text: await res.text() }
 }
 
@@ -89,7 +98,7 @@ export async function persistAiConfig(config: AiConfig): Promise<void> {
 }
 
 export async function chat(config: AiConfig, messages: Array<{ role: string; content: string }>): Promise<string> {
-  const res = await postJson(config, { model: config.model, messages, temperature: 0.2 })
+  const res = await postJson(config, { model: config.model, messages, temperature: 0.2, max_tokens: 900 })
   if (res.status < 200 || res.status >= 300) {
     throw new Error('AI 请求失败（HTTP ' + res.status + '）：' + res.text.slice(0, 200))
   }
@@ -120,6 +129,28 @@ export async function listAiModels(config: AiConfig): Promise<string[]> {
     }
   }
   return []
+}
+
+export async function analyzeCharacter(
+  config: AiConfig,
+  character: { name: string; aliases: string[]; role: string; bio: string; tags: string[] },
+  notes: Array<{ text: string; note?: string; chapterTitle?: string }>,
+  bookTitle?: string,
+): Promise<string> {
+  const material = [
+    bookTitle ? '书名：' + bookTitle : '',
+    '人物：' + character.name,
+    '别名：' + (character.aliases.join('、') || '暂无'),
+    '身份：' + (character.role || '未写'),
+    '标签：' + (character.tags.join('、') || '暂无'),
+    '简介：' + (character.bio || '暂无'),
+    '相关笔记：',
+    ...notes.slice(0, 12).map((note) => '- [' + (note.chapterTitle || '') + '] ' + (note.note || note.text).slice(0, 160)),
+  ].join('\n')
+  return (await chat(config, [
+    { role: 'system', content: '你是小说人物分析助手。只根据给出的资料分析，不要编造资料里没有的情节。资料不足时明确说“资料不足”。' },
+    { role: 'user', content: material + '\n\n请输出：1. 角色定位；2. 性格与动机；3. 人物关系；4. 剧情作用；5. 资料缺口或前后矛盾。用简洁中文，不超过 400 字。' },
+  ])).trim()
 }
 
 export async function summarizeChapter(config: AiConfig, title: string, text: string): Promise<string> {
@@ -163,12 +194,12 @@ function bookContext(context?: { bookTitle?: string; chapterTitle?: string }): s
 
 type EntityKind = 'character' | 'place'
 
-function splitChunks(input: string, size = 6000): string[] {
+function splitChunks(input: string, size = 6000, maxChunks = 10): string[] {
   const text = input.replace(/\r/g, '')
   if (text.length <= size * 1.4) return [text]
   const chunks: string[] = []
   let start = 0
-  while (start < text.length && chunks.length < 10) {
+  while (start < text.length && chunks.length < maxChunks) {
     let end = Math.min(text.length, start + size)
     if (end < text.length) {
       const slice = text.slice(start, end)
@@ -274,7 +305,8 @@ async function extractEntities(
   text: string,
   context?: { bookTitle?: string; chapterTitle?: string },
 ): Promise<AiCharacter[]> {
-  const chunks = splitChunks(text)
+  const local = config.provider === 'ollama' || config.provider === 'lmstudio'
+  const chunks = splitChunks(text, local ? 2400 : 6000, local ? 1 : 10)
   const merged = new Map<string, AiCharacter>()
   for (const chunk of chunks) {
     const list = await extractOnce(config, kind, chunk, context)

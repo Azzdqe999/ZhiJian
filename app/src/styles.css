@@ -1839,3 +1839,5 @@ input { font-family: inherit; }
   .map-pin-label { font-size: 10px; }
   .map-search { display: none; }
 }
+
+.cd-ai { margin-top: 8px; padding: 10px 12px; border-left: 3px solid var(--accent); background: var(--paper2); border-radius: 6px; font-size: 12px; line-height: 1.9; white-space: pre-wrap; }
