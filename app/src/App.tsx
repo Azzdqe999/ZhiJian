@@ -3,10 +3,10 @@ import { App as CapacitorApp } from '@capacitor/app'
 import { Capacitor } from '@capacitor/core'
 import { checkForUpdate, installUpdate } from './lib/updater'
 import type { UpdateInfo } from './lib/updater'
+import type { Bookmark } from './lib/types'
 import { ENCODINGS, ENCODING_LABELS, countWords, decodeBytes, splitChapters, toParagraphs } from './lib/txt'
 import type { Chapter, TextEncoding } from './lib/txt'
 import {
-  deleteBook as removeBookFromDb,
   deleteCharacter as removeCharacterFromDb,
   deleteCharacterImage,
   getChapter,
@@ -15,6 +15,10 @@ import {
   getSyncConfig,
   listBooks,
   listBookMaps,
+  listBookmarks,
+  putBookmark,
+  deleteBookmark,
+  trashBook,
   listCollections,
   putBookMap,
   putCollection,
@@ -2130,6 +2134,30 @@ function Reader({
   const [ratio, setRatio] = useState(book.scrollRatio || 0)
   const [attempt, setAttempt] = useState(0)
   const [selection, setSelection] = useState<{ text: string; left: number; top: number } | null>(null)
+  const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
+
+  useEffect(() => {
+    void listBookmarks(book.id).then(setBookmarks)
+  }, [book.id])
+
+  const addBookmark = async () => {
+    const bookmark: Bookmark = {
+      id: 'bm_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 5),
+      bookId: book.id,
+      chapterIndex: index,
+      chapterTitle: book.toc[index] || '第 ' + (index + 1) + ' 章',
+      ratio: ratioRef.current,
+      createdAt: Date.now(),
+    }
+    await putBookmark(bookmark)
+    setBookmarks(await listBookmarks(book.id))
+    onToast('已加书签')
+  }
+
+  const removeBookmark = async (id: string) => {
+    await deleteBookmark(id)
+    setBookmarks(await listBookmarks(book.id))
+  }
 
   useEffect(() => {
     const onBack = (event: Event) => {
@@ -2568,8 +2596,24 @@ function Reader({
                 <div className="drawer-title">目录</div>
                 <div className="drawer-sub">{book.title} · 共 {book.chapterCount} 章</div>
               </div>
-              <button className="drawer-close" onClick={() => setDrawer(false)}>关闭</button>
+              <div className="drawer-head-actions">
+                <button className="btn small" onClick={() => void addBookmark()}>加书签</button>
+                <button className="drawer-close" onClick={() => setDrawer(false)}>关闭</button>
+              </div>
             </div>
+            {bookmarks.length ? (
+              <div className="drawer-bookmarks">
+                <div className="drawer-sub">书签 · {bookmarks.length}</div>
+                {bookmarks.map((bookmark) => (
+                  <div className="drawer-bookmark" key={bookmark.id}>
+                    <button className="link" onClick={() => { go(bookmark.chapterIndex); setDrawer(false) }}>
+                      {bookmark.chapterTitle}
+                    </button>
+                    <button className="icon-btn" onClick={() => void removeBookmark(bookmark.id)}>×</button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
             <div className="drawer-list">
               {book.toc.map((title, i) => (
                 <button
@@ -2658,7 +2702,7 @@ function BookDetail({ book, collections, onAssign, onSplit, onClose, onReloaded,
     if (busy) return
     setBusy(true)
     try {
-      await removeBookFromDb(book.id)
+      await trashBook(book.id)
       onDeleted(book.id)
     } catch (error) {
       setNote(error instanceof Error ? error.message : String(error))

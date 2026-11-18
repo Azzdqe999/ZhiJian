@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import type { AiConfig, FontFamily, SyncConfig, Theme } from '../lib/types'
+import type { AiConfig, BookMeta, FontFamily, SyncConfig, Theme } from '../lib/types'
 import { FONT_OPTIONS } from '../lib/fonts'
-import { getSyncConfig, saveSyncConfig } from '../lib/store'
+import { deleteBook, getSyncConfig, listTrashedBooks, restoreBook, saveSyncConfig } from '../lib/store'
 import { syncNow, testConnection } from '../lib/sync'
 import { AI_MODELS, AI_PRESETS, EMPTY_AI, listAiModels, loadAiConfig, persistAiConfig, testAi } from '../lib/ai'
 import { checkForUpdate, getAppVersion, installUpdate, isNativeUpdater } from '../lib/updater'
@@ -62,7 +62,27 @@ export default function SettingsPanel(props: Props) {
   const [backupBusy, setBackupBusy] = useState(false)
   const [backupStatus, setBackupStatus] = useState('')
   const [alwaysOnTop, setAlwaysOnTopState] = useState(false)
+  const [trash, setTrash] = useState<BookMeta[]>([])
   const topSupported = supportsAlwaysOnTop()
+
+  const reloadTrash = async () => {
+    setTrash(await listTrashedBooks())
+  }
+
+  const onRestoreBook = async (id: string) => {
+    await restoreBook(id)
+    await reloadTrash()
+    await props.onSynced?.()
+    props.onToast?.('已从回收站恢复')
+  }
+
+  const onPurgeBook = async (id: string) => {
+    if (!window.confirm('彻底删除后无法恢复，确定？')) return
+    await deleteBook(id)
+    await reloadTrash()
+    await props.onSynced?.()
+    props.onToast?.('已彻底删除')
+  }
 
   const onToggleTop = async () => {
     const next = await setAlwaysOnTop(!alwaysOnTop)
@@ -108,6 +128,7 @@ export default function SettingsPanel(props: Props) {
       if (value) setSync({ ...EMPTY_SYNC, ...value })
     })
     void loadAiConfig().then(setAi)
+    void reloadTrash()
     if (topSupported) void getAlwaysOnTop().then(setAlwaysOnTopState)
     if (isNativeUpdater()) {
       void getAppVersion().then((version) => {
@@ -479,6 +500,24 @@ export default function SettingsPanel(props: Props) {
           </label>
         </div>
         {backupStatus ? <p className="setting-foot">{backupStatus}</p> : null}
+      </section>
+
+      <section className="setting-card">
+        <h2>回收站</h2>
+        {trash.length ? (
+          <div className="trash-list">
+            {trash.map((book) => (
+              <div className="trash-row" key={book.id}>
+                <span className="trash-title">{book.title}</span>
+                <span className="trash-date">{book.deletedAt ? new Date(book.deletedAt).toLocaleDateString() : ''}</span>
+                <button className="btn small" onClick={() => void onRestoreBook(book.id)}>恢复</button>
+                <button className="btn small danger" onClick={() => void onPurgeBook(book.id)}>彻底删除</button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="setting-foot">空。删除的书会先放这里，不会立刻丢文件。</p>
+        )}
       </section>
 
       <section className="setting-card">

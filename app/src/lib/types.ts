@@ -31,6 +31,19 @@ export type BookMeta = {
   series?: string
   /** 收藏夹/合集 id */
   collectionId?: string
+  /** 移入回收站的时间；有值时不显示在书架 */
+  deletedAt?: number
+}
+
+export type Bookmark = {
+  id: string
+  bookId: string
+  chapterIndex: number
+  chapterTitle: string
+  ratio: number
+  cfi?: string
+  note?: string
+  createdAt: number
 }
 
 export type Theme = 'paper' | 'night'

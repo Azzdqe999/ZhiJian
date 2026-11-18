@@ -13,10 +13,11 @@ import type {
   AiConfig,
   SyncConfig,
   SyncTombstone,
+  Bookmark,
 } from './types'
 
 const DB_NAME = 'paper-between'
-const DB_VERSION = 7
+const DB_VERSION = 8
 
 let dbPromise: Promise<IDBDatabase> | null = null
 
@@ -61,6 +62,10 @@ function openDb(): Promise<IDBDatabase> {
         const tombstones = db.createObjectStore('tombstones', { keyPath: 'key' })
         tombstones.createIndex('deletedAt', 'deletedAt', { unique: false })
       }
+      if (!db.objectStoreNames.contains('bookmarks')) {
+        const bookmarks = db.createObjectStore('bookmarks', { keyPath: 'id' })
+        bookmarks.createIndex('bookId', 'bookId', { unique: false })
+      }
     }
     req.onsuccess = () => {
       const db = req.result
@@ -95,11 +100,31 @@ function txDone(tx: IDBTransaction): Promise<void> {
 
 const chapterRange = (bookId: string) => IDBKeyRange.bound([bookId, 0], [bookId, 2147483647])
 
-export async function listBooks(): Promise<BookMeta[]> {
+export async function listBooks(includeDeleted = false): Promise<BookMeta[]> {
   const db = await openDb()
   const tx = db.transaction('books', 'readonly')
   const rows = await requestDone(tx.objectStore('books').getAll() as IDBRequest<BookMeta[]>)
-  return rows.sort((a, b) => b.lastReadAt - a.lastReadAt)
+  return rows
+    .filter((book) => includeDeleted || !book.deletedAt)
+    .sort((a, b) => b.lastReadAt - a.lastReadAt)
+}
+
+export async function listTrashedBooks(): Promise<BookMeta[]> {
+  const rows = await listBooks(true)
+  return rows.filter((book) => Boolean(book.deletedAt)).sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0))
+}
+
+export async function trashBook(id: string): Promise<void> {
+  const book = await getBook(id)
+  if (!book) return
+  await putBook({ ...book, deletedAt: Date.now() })
+}
+
+export async function restoreBook(id: string): Promise<void> {
+  const book = await getBook(id)
+  if (!book) return
+  const { deletedAt: _deleted, ...rest } = book
+  await putBook(rest)
 }
 
 export async function getBook(id: string): Promise<BookMeta | null> {
@@ -476,4 +501,29 @@ export async function listAllMapPins(): Promise<MapPin[]> {
   const db = await openDb()
   const tx = db.transaction('mapPins', 'readonly')
   return requestDone(tx.objectStore('mapPins').getAll() as IDBRequest<MapPin[]>)
+}
+
+/* ---------- 书签 ---------- */
+
+export async function listBookmarks(bookId?: string): Promise<Bookmark[]> {
+  const db = await openDb()
+  const tx = db.transaction('bookmarks', 'readonly')
+  const store = tx.objectStore('bookmarks')
+  const req = bookId ? store.index('bookId').getAll(IDBKeyRange.only(bookId)) : store.getAll()
+  const rows = await requestDone(req as IDBRequest<Bookmark[]>)
+  return rows.sort((a, b) => a.chapterIndex - b.chapterIndex || a.createdAt - b.createdAt)
+}
+
+export async function putBookmark(bookmark: Bookmark): Promise<void> {
+  const db = await openDb()
+  const tx = db.transaction('bookmarks', 'readwrite')
+  tx.objectStore('bookmarks').put(bookmark)
+  await txDone(tx)
+}
+
+export async function deleteBookmark(id: string): Promise<void> {
+  const db = await openDb()
+  const tx = db.transaction('bookmarks', 'readwrite')
+  tx.objectStore('bookmarks').delete(id)
+  await txDone(tx)
 }

@@ -1,10 +1,11 @@
 import JSZip from 'jszip'
-import type { BookMap, BookMeta, ChapterRow, Character, CharacterImage, Collection, MapPin, Note, Settings } from './types'
+import type { BookMap, BookMeta, Bookmark, ChapterRow, Character, CharacterImage, Collection, MapPin, Note, Settings } from './types'
 import {
   getChapters,
   getFile,
   getSettings,
   listBookMaps,
+  listBookmarks,
   listBooks,
   listCharacterImages,
   listCharacters,
@@ -13,6 +14,7 @@ import {
   listNotes,
   putBook,
   putBookMap,
+  putBookmark,
   putChapters,
   putCharacter,
   putCharacterImage,
@@ -35,6 +37,7 @@ export type BackupMeta = {
   collections: Collection[]
   maps: Array<Omit<BookMap, 'blob'>>
   pins: MapPin[]
+  bookmarks: Bookmark[]
   settings?: Settings
 }
 
@@ -42,7 +45,7 @@ export type BackupProgress = (text: string) => void
 
 export async function exportBackup(onProgress?: BackupProgress): Promise<Blob> {
   const zip = new JSZip()
-  const books = await listBooks()
+  const books = await listBooks(true)
   const meta: BackupMeta = {
     version: 1,
     createdAt: Date.now(),
@@ -55,6 +58,7 @@ export async function exportBackup(onProgress?: BackupProgress): Promise<Blob> {
     collections: await listCollections(),
     maps: [],
     pins: [],
+    bookmarks: await listBookmarks(),
   }
   const files = zip.folder('files')
   const imageFolder = zip.folder('images')
@@ -121,6 +125,7 @@ export async function importBackup(file: File, onProgress?: BackupProgress): Pro
     await putBookMap({ ...map, blob: new Blob([await bin.async('arraybuffer')]) })
   }
   for (const pin of meta.pins || []) await putMapPin(pin)
+  for (const bookmark of meta.bookmarks || []) await putBookmark(bookmark)
   if (meta.settings) await saveSettings(meta.settings)
 
   return {

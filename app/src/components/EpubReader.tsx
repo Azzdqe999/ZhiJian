@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ePub from 'epubjs'
 import type { Book as EpubBook, Contents, NavItem, Rendition } from 'epubjs'
-import { getFile, putNote, deleteNote } from '../lib/store'
+import { getFile, putNote, deleteNote, listBookmarks, putBookmark, deleteBookmark } from '../lib/store'
 import { NOTE_COLORS, NOTE_COLOR_MAP, findDuplicateNote } from '../lib/notes'
 import { titleForHref } from '../lib/epub'
 import { FONT_OPTIONS, fontStack } from '../lib/fonts'
 import { buildMatcher, matchText } from '../lib/characters'
 import type { CardRect, CharacterMatcher } from '../lib/characters'
-import type { BookMeta, Character, FontFamily, Note, NoteColor, Theme } from '../lib/types'
+import type { Bookmark, BookMeta, Character, FontFamily, Note, NoteColor, Theme } from '../lib/types'
 import NoteEditor from './NoteEditor'
 import type { NoteEditorValues } from './NoteEditor'
 import { extractCharacters, extractPlaces, loadAiConfig } from '../lib/ai'
@@ -206,6 +206,32 @@ export default function EpubReader(props: EpubReaderProps) {
   const [drawer, setDrawer] = useState(false)
   const [currentHref, setCurrentHref] = useState('')
   const [currentIndex, setCurrentIndex] = useState(book.chapterIndex || 0)
+  const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
+
+  useEffect(() => {
+    void listBookmarks(book.id).then(setBookmarks)
+  }, [book.id])
+
+  const addBookmark = async () => {
+    const cfi = cfiRef.current
+    const bookmark: Bookmark = {
+      id: 'bm_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 5),
+      bookId: book.id,
+      chapterIndex: indexRef.current,
+      chapterTitle: titleForHref(hrefRef.current, tocRef.current) || tocRef.current[indexRef.current]?.label || '正文',
+      ratio: ratioRef.current,
+      cfi,
+      createdAt: Date.now(),
+    }
+    await putBookmark(bookmark)
+    setBookmarks(await listBookmarks(book.id))
+    props.onToast('已加书签')
+  }
+
+  const removeBookmark = async (id: string) => {
+    await deleteBookmark(id)
+    setBookmarks(await listBookmarks(book.id))
+  }
   const [spineCount, setSpineCount] = useState(Math.max(1, book.chapterCount))
   const [linearCount, setLinearCount] = useState(Math.max(1, book.chapterCount))
   const [percent, setPercent] = useState(0)
@@ -1078,8 +1104,30 @@ export default function EpubReader(props: EpubReaderProps) {
                 <div className="drawer-title">目录</div>
                 <div className="drawer-sub">{book.title} · 共 {drawerRows.length} 条</div>
               </div>
-              <button className="drawer-close" onClick={() => setDrawer(false)}>关闭</button>
+              <div className="drawer-head-actions">
+                <button className="btn small" onClick={() => void addBookmark()}>加书签</button>
+                <button className="drawer-close" onClick={() => setDrawer(false)}>关闭</button>
+              </div>
             </div>
+            {bookmarks.length ? (
+              <div className="drawer-bookmarks">
+                <div className="drawer-sub">书签 · {bookmarks.length}</div>
+                {bookmarks.map((bookmark) => (
+                  <div className="drawer-bookmark" key={bookmark.id}>
+                    <button
+                      className="link"
+                      onClick={() => {
+                        setDrawer(false)
+                        if (bookmark.cfi) renditionRef.current?.display(bookmark.cfi).catch(() => {})
+                      }}
+                    >
+                      {bookmark.chapterTitle}
+                    </button>
+                    <button className="icon-btn" onClick={() => void removeBookmark(bookmark.id)}>×</button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
             <div className="drawer-list">
               {drawerRows.map((row, index) => {
                 const current = row.href && row.href === currentHref
