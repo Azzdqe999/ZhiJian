@@ -6,6 +6,7 @@ import { syncNow, testConnection } from '../lib/sync'
 import { AI_MODELS, AI_PRESETS, EMPTY_AI, listAiModels, loadAiConfig, persistAiConfig, testAi } from '../lib/ai'
 import { checkForUpdate, getAppVersion, installUpdate, isNativeUpdater } from '../lib/updater'
 import { downloadBlob, exportBackup, importBackup } from '../lib/backup'
+import { getAlwaysOnTop, setAlwaysOnTop, supportsAlwaysOnTop } from '../lib/window'
 import type { UpdateInfo } from '../lib/updater'
 
 type Props = {
@@ -60,6 +61,14 @@ export default function SettingsPanel(props: Props) {
   }
   const [backupBusy, setBackupBusy] = useState(false)
   const [backupStatus, setBackupStatus] = useState('')
+  const [alwaysOnTop, setAlwaysOnTopState] = useState(false)
+  const topSupported = supportsAlwaysOnTop()
+
+  const onToggleTop = async () => {
+    const next = await setAlwaysOnTop(!alwaysOnTop)
+    setAlwaysOnTopState(next)
+    props.onToast?.(next ? '窗口已置顶' : '已取消置顶')
+  }
 
   const onExportBackup = async () => {
     setBackupBusy(true)
@@ -99,6 +108,7 @@ export default function SettingsPanel(props: Props) {
       if (value) setSync({ ...EMPTY_SYNC, ...value })
     })
     void loadAiConfig().then(setAi)
+    if (topSupported) void getAlwaysOnTop().then(setAlwaysOnTopState)
     if (isNativeUpdater()) {
       void getAppVersion().then((version) => {
         if (version) setAppVersion(version.versionName + '（' + version.versionCode + '）')
@@ -427,6 +437,22 @@ export default function SettingsPanel(props: Props) {
           </div>
           {updateNote ? <p className="setting-foot">{updateNote}</p> : null}
           <p className="setting-foot">更新包从 GitHub Releases 下载；安装时系统会再确认一次。</p>
+        </section>
+      ) : null}
+
+      {topSupported ? (
+        <section className="setting-card">
+          <h2>窗口</h2>
+          <div className="setting-row">
+            <div>
+              <strong>固定在应用上层</strong>
+              <p>窗口保持在其他应用前面，适合边看边查资料或悬浮阅读。</p>
+            </div>
+            <button className={'btn small' + (alwaysOnTop ? ' solid' : '')} onClick={() => void onToggleTop()}>
+              {alwaysOnTop ? '已置顶' : '置顶窗口'}
+            </button>
+          </div>
+          <p className="setting-foot">快捷键：Ctrl+Shift+T；置顶状态会记住，下次启动继续生效。</p>
         </section>
       ) : null}
 
