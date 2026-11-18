@@ -10,6 +10,7 @@ import type { CardRect, CharacterMatcher } from '../lib/characters'
 import type { Bookmark, BookMeta, Character, FontFamily, Note, NoteColor, Theme } from '../lib/types'
 import NoteEditor from './NoteEditor'
 import AiQaModal from './AiQaModal'
+import BrightnessEdge from './BrightnessEdge'
 import type { NoteEditorValues } from './NoteEditor'
 import { extractCharacters, extractPlaces, loadAiConfig, summarizeChapter } from '../lib/ai'
 import { TtsPlayer, ttsSupported } from '../lib/tts'
@@ -1685,6 +1686,8 @@ export default function EpubReader(props: EpubReaderProps) {
           />
         </div>
       )}
+
+      <BrightnessEdge />
     </main>
   )
 }

@@ -73,6 +73,7 @@ import ReaderSheet from './components/ReaderSheet'
 import AiQaModal from './components/AiQaModal'
 import DuplicateModal from './components/DuplicateModal'
 import OpdsModal from './components/OpdsModal'
+import BrightnessEdge from './components/BrightnessEdge'
 import { searchLibrary } from './lib/search'
 import { TtsPlayer, ttsSupported } from './lib/tts'
 import { setVolumePaging } from './lib/keys'
@@ -2966,6 +2967,8 @@ function Reader({
           </aside>
         </>
       )}
+
+      <BrightnessEdge />
     </main>
   )
 }

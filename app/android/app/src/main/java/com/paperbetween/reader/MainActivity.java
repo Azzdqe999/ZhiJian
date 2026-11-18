@@ -12,6 +12,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(DavHttpPlugin.class);
         registerPlugin(TtsPlugin.class);
         registerPlugin(PaperKeysPlugin.class);
+        registerPlugin(BrightnessPlugin.class);
         super.onCreate(savedInstanceState);
     }
 
