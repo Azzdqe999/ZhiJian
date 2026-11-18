@@ -2224,8 +2224,6 @@ function Reader({
     if (speaking) startTts(ttsIndex, next)
   }
 
-  const previousTts = () => startTts(Math.max(0, ttsIndex - 1))
-
   const rewindTts = () => {
     if (!playerRef.current.rewind(5)) startTts(Math.max(0, ttsIndex - 1))
   }
@@ -2675,7 +2673,6 @@ function Reader({
       {speaking ? (
         <div className="tts-bar" onMouseDown={(event) => event.stopPropagation()}>
           <button className="tts-chip" onClick={rewindTts} title="回退 5 秒">−5s</button>
-          <button className="tts-chip" onClick={previousTts} title="上一段">上一段</button>
           <span className="tts-count">{ttsIndex + 1} / {paragraphs.length}</span>
           <input
             className="tts-progress"
