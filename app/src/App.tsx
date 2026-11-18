@@ -53,7 +53,7 @@ import { fontLabel, fontStack } from './lib/fonts'
 import { downloadMarkdown, notesFileName, notesToMarkdown } from './lib/markdown'
 import { sha256 } from './lib/hash'
 import { syncNow } from './lib/sync'
-import { extractCharacters, extractPlaces, loadAiConfig, summarizeChapter } from './lib/ai'
+import { classifyEntity, extractCharacters, extractPlaces, loadAiConfig, summarizeChapter } from './lib/ai'
 import type { AiCharacter } from './lib/ai'
 import {
   buildMatcher,
@@ -2333,6 +2333,34 @@ function Reader({
     if (speaking) startTts(ttsIndex, next)
   }
 
+  const classifySelection = async () => {
+    if (!selection) return
+    const name = selection.text.trim()
+    setSelection(null)
+    window.getSelection()?.removeAllRanges()
+    if (!name) return
+    startAiBusy('AI 正在判断名称类型')
+    try {
+      const config = await loadAiConfig()
+      if (!config.apiKey.trim() && config.provider !== 'ollama') {
+        stopAiBusy()
+        onToast('先在设置里配置 AI')
+        return
+      }
+      const result = await classifyEntity(config, name, {
+        bookTitle: book.title,
+        chapterTitle: chapter?.title,
+        excerpt: chapter?.text.slice(0, 3000),
+      })
+      stopAiBusy()
+      const label = result.kind === 'character' ? '人物/称呼' : result.kind === 'place' ? '地名' : result.kind === 'other' ? '其他专名' : '无法判断'
+      onToast('AI 判断「' + name + '」：' + label + (result.reason ? ' · ' + result.reason : ''))
+    } catch (error) {
+      stopAiBusy()
+      onToast('AI 判定失败：' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
   const toggleTtsPause = () => {
     setTtsPaused(playerRef.current.togglePause())
   }
@@ -2700,7 +2728,13 @@ function Reader({
                   return
                 }
                 startAiBusy('AI 正在抽取人物')
-                const list = await extractCharacters(config, chapter.text, { bookTitle: book.title, chapterTitle: chapter.title })
+                const knownCharacters = characters.filter((item) => (item.kind || 'character') !== 'place').flatMap((item) => [item.name, ...item.aliases])
+                const knownPlaces = characters.filter((item) => item.kind === 'place').flatMap((item) => [item.name, ...item.aliases])
+                const list = await extractCharacters(config, chapter.text, {
+                  bookTitle: book.title,
+                  chapterTitle: chapter.title,
+                  knownPlaces,
+                })
                 stopAiBusy()
                 if (!list.length) {
                   onToast('AI 没有识别到人物')
@@ -2737,7 +2771,13 @@ function Reader({
                   return
                 }
                 startAiBusy('AI 正在抽取地名')
-                const list = await extractPlaces(config, chapter.text, { bookTitle: book.title, chapterTitle: chapter.title })
+                const knownCharacters = characters.filter((item) => (item.kind || 'character') !== 'place').flatMap((item) => [item.name, ...item.aliases])
+                const knownPlaces = characters.filter((item) => item.kind === 'place').flatMap((item) => [item.name, ...item.aliases])
+                const list = await extractPlaces(config, chapter.text, {
+                  bookTitle: book.title,
+                  chapterTitle: chapter.title,
+                  knownCharacters,
+                })
                 stopAiBusy()
                 if (!list.length) {
                   onToast('AI 没有识别到地名')
@@ -2892,6 +2932,7 @@ function Reader({
           style={{ left: selection.left, top: selection.top }}
           onMouseDown={(event) => event.preventDefault()}
         >
+          <button className="hl-action" onClick={() => void classifySelection()}>AI 判定</button>
           <button
             className="hl-action"
             onClick={() => {

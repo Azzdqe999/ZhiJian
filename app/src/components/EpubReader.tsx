@@ -12,7 +12,7 @@ import NoteEditor from './NoteEditor'
 import AiQaModal from './AiQaModal'
 import BrightnessEdge from './BrightnessEdge'
 import type { NoteEditorValues } from './NoteEditor'
-import { extractCharacters, extractPlaces, loadAiConfig, summarizeChapter } from '../lib/ai'
+import { classifyEntity, extractCharacters, extractPlaces, loadAiConfig, summarizeChapter } from '../lib/ai'
 import { TtsPlayer, ttsSupported } from '../lib/tts'
 import { startAiBusy, stopAiBusy } from '../lib/ai-busy'
 import { setVolumePaging } from '../lib/keys'
@@ -374,6 +374,31 @@ export default function EpubReader(props: EpubReaderProps) {
     }
     void window.paperOverlay?.update({ ...ttsOverlay, title: book.title, paused: ttsPaused })
   }, [speaking, ttsPaused, ttsOverlay, book.title])
+
+  const classifySelection = async () => {
+    if (!toolbar) return
+    const name = toolbar.text.trim()
+    const rendition = renditionRef.current
+    const excerpt = rendition ? firstContents(rendition)?.document.body.innerText.slice(0, 3000) || '' : ''
+    setToolbar(null)
+    if (!name) return
+    startAiBusy('AI 正在判断名称类型')
+    try {
+      const config = await loadAiConfig()
+      if (!config.apiKey.trim() && config.provider !== 'ollama') {
+        stopAiBusy()
+        props.onToast('先在设置里配置 AI')
+        return
+      }
+      const result = await classifyEntity(config, name, { bookTitle: book.title, chapterTitle: toolbar.chapterTitle, excerpt })
+      stopAiBusy()
+      const label = result.kind === 'character' ? '人物/称呼' : result.kind === 'place' ? '地名' : result.kind === 'other' ? '其他专名' : '无法判断'
+      props.onToast('AI 判断「' + name + '」：' + label + (result.reason ? ' · ' + result.reason : ''))
+    } catch (error) {
+      stopAiBusy()
+      props.onToast('AI 判定失败：' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
 
   const startTts = (from: number, rate = ttsRate) => {
     const rendition = renditionRef.current
@@ -1318,7 +1343,8 @@ export default function EpubReader(props: EpubReaderProps) {
                   return
                 }
                 startAiBusy('AI 正在抽取人物')
-                const list = await extractCharacters(config, text, { bookTitle: book.title })
+                const knownPlaces = props.characters.filter((item) => item.kind === 'place').flatMap((item) => [item.name, ...item.aliases])
+                const list = await extractCharacters(config, text, { bookTitle: book.title, knownPlaces })
                 stopAiBusy()
                 if (!list.length) {
                   props.onToast('AI 没有识别到人物')
@@ -1357,7 +1383,8 @@ export default function EpubReader(props: EpubReaderProps) {
                   return
                 }
                 startAiBusy('AI 正在抽取地名')
-                const list = await extractPlaces(config, text, { bookTitle: book.title })
+                const knownCharacters = props.characters.filter((item) => (item.kind || 'character') !== 'place').flatMap((item) => [item.name, ...item.aliases])
+                const list = await extractPlaces(config, text, { bookTitle: book.title, knownCharacters })
                 stopAiBusy()
                 if (!list.length) {
                   props.onToast('AI 没有识别到地名')
@@ -1449,6 +1476,7 @@ export default function EpubReader(props: EpubReaderProps) {
           >
             标为人物
           </button>
+          <button className="hl-action" onClick={() => void classifySelection()}>AI 判定</button>
           <button className="hl-action" onClick={() => { const index = toolbar.paraIndex; setToolbar(null); startTts(index) }}>
             从这里朗读
           </button>

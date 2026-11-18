@@ -212,7 +212,14 @@ function splitChunks(input: string, size = 6000, maxChunks = 10): string[] {
   return chunks.filter((chunk) => chunk.trim().length > 0)
 }
 
-function promptFor(kind: EntityKind, text: string, context?: { bookTitle?: string; chapterTitle?: string }): string {
+type EntityContext = {
+  bookTitle?: string
+  chapterTitle?: string
+  knownCharacters?: string[]
+  knownPlaces?: string[]
+}
+
+function promptFor(kind: EntityKind, text: string, context?: EntityContext): string {
   const common = [
     bookContext(context),
     '你是中文小说编辑。这一段只是整章的一部分，请只根据这一段抽取，但要把这一段里的人名/地名**尽量找全，宁多勿漏**。',
@@ -236,6 +243,12 @@ function promptFor(kind: EntityKind, text: string, context?: { bookTitle?: strin
       '2. 同一地点的不同称呼合并进 aliases；',
       '3. 拿不准但像地名的也列出，不要因为不确定就漏掉。',
     )
+  }
+  if (kind === 'place' && context?.knownCharacters?.length) {
+    common.push('以下已经是人物/称呼，绝对不要标成地名：' + context.knownCharacters.slice(0, 80).join('、'))
+  }
+  if (kind === 'character' && context?.knownPlaces?.length) {
+    common.push('以下已经是地名，绝对不要标成人物：' + context.knownPlaces.slice(0, 80).join('、'))
   }
   common.push(
     '只输出 JSON：{"characters":[{"name":"名称","aliases":["别称"],"role":"身份/类型","bio":"一句话说明"}]}',
@@ -290,7 +303,7 @@ async function extractOnce(
   config: AiConfig,
   kind: EntityKind,
   text: string,
-  context?: { bookTitle?: string; chapterTitle?: string },
+  context?: EntityContext,
 ): Promise<AiCharacter[]> {
   const content = await chat(config, [
     { role: 'system', content: '你只输出可解析的 JSON，不写解释。' },
@@ -303,7 +316,7 @@ async function extractEntities(
   config: AiConfig,
   kind: EntityKind,
   text: string,
-  context?: { bookTitle?: string; chapterTitle?: string },
+  context?: EntityContext,
 ): Promise<AiCharacter[]> {
   const local = config.provider === 'ollama' || config.provider === 'lmstudio'
   const chunks = splitChunks(text, local ? 2400 : 6000, local ? 1 : 10)
@@ -312,13 +325,18 @@ async function extractEntities(
     const list = await extractOnce(config, kind, chunk, context)
     mergeEntities(merged, list)
   }
-  return [...merged.values()]
+  const blocked = (kind === 'place' ? context?.knownCharacters : context?.knownPlaces) || []
+  const blockedSet = new Set(blocked.map((name) => name.trim().toLowerCase()))
+  return [...merged.values()].filter((item) => {
+    if (blockedSet.has(item.name.trim().toLowerCase())) return false
+    return !item.aliases.some((alias) => blockedSet.has(alias.trim().toLowerCase()))
+  })
 }
 
 export async function extractPlaces(
   config: AiConfig,
   text: string,
-  context?: { bookTitle?: string; chapterTitle?: string },
+  context?: EntityContext,
 ): Promise<AiCharacter[]> {
   return extractEntities(config, 'place', text, context)
 }
@@ -326,7 +344,42 @@ export async function extractPlaces(
 export async function extractCharacters(
   config: AiConfig,
   text: string,
-  context?: { bookTitle?: string; chapterTitle?: string },
+  context?: EntityContext,
 ): Promise<AiCharacter[]> {
   return extractEntities(config, 'character', text, context)
+}
+
+export type EntityClassification = {
+  kind: 'character' | 'place' | 'other' | 'unknown'
+  reason: string
+}
+
+export async function classifyEntity(
+  config: AiConfig,
+  name: string,
+  context: { bookTitle?: string; chapterTitle?: string; excerpt?: string },
+): Promise<EntityClassification> {
+  const content = await chat(config, [
+    { role: 'system', content: '你是中文小说实体分类器。只输出 JSON，不写解释。' },
+    {
+      role: 'user',
+      content: [
+        '书名：' + (context.bookTitle || '未知'),
+        '章节：' + (context.chapterTitle || '未知'),
+        '待判断名称：' + name,
+        '上下文：' + (context.excerpt || '').slice(0, 1200),
+        '请判断它是“人物/称呼”“地名”“其他专名”还是“无法判断”。',
+        '只输出：{"kind":"character|place|other|unknown","reason":"一句话依据"}',
+      ].join('\n'),
+    },
+  ])
+  const match = content.match(/\{[\s\S]*\}/)
+  if (!match) return { kind: 'unknown', reason: content.slice(0, 120) }
+  try {
+    const parsed = JSON.parse(match[0]) as { kind?: string; reason?: string }
+    const kind = parsed.kind === 'character' || parsed.kind === 'place' || parsed.kind === 'other' ? parsed.kind : 'unknown'
+    return { kind, reason: String(parsed.reason || '').slice(0, 200) }
+  } catch {
+    return { kind: 'unknown', reason: content.slice(0, 120) }
+  }
 }
