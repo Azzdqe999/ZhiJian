@@ -71,6 +71,7 @@ import CharactersPanel from './components/CharactersPanel'
 import MapViewer from './components/MapViewer'
 import ReaderSheet from './components/ReaderSheet'
 import AiQaModal from './components/AiQaModal'
+import DuplicateModal from './components/DuplicateModal'
 import { searchLibrary } from './lib/search'
 import { TtsPlayer, ttsSupported } from './lib/tts'
 import { setVolumePaging } from './lib/keys'
@@ -200,6 +201,7 @@ function App() {
   const [textAlign, setTextAlign] = useState<'left' | 'justify'>('justify')
   const [readerSheetOpen, setReaderSheetOpen] = useState(false)
   const [fullSearchOpen, setFullSearchOpen] = useState(false)
+  const [duplicatesOpen, setDuplicatesOpen] = useState(false)
   const [fullQuery, setFullQuery] = useState('')
   const [fullHits, setFullHits] = useState<SearchHit[]>([])
   const [fullBusy, setFullBusy] = useState(false)
@@ -1536,6 +1538,7 @@ function App() {
           onImport={() => fileRef.current?.click()}
           onDetail={(book) => setDetailId(book.id)}
           onFullSearch={() => { setFullQuery(''); setFullHits([]); setFullSearchOpen(true) }}
+          onDuplicates={() => setDuplicatesOpen(true)}
         />
       ) : nav === 'notes' ? (
         <NotesPanel notes={notes} books={library} onJump={jumpToNote} onExport={exportNotes} onToast={showToast} />
@@ -1726,6 +1729,20 @@ function App() {
         </div>
       )}
 
+      {duplicatesOpen ? (
+        <DuplicateModal
+          books={library}
+          onClose={() => setDuplicatesOpen(false)}
+          onTrash={(id) => {
+            void (async () => {
+              await trashBook(id)
+              await refreshLocalData()
+              showToast('重复书籍已移入回收站')
+            })()
+          }}
+        />
+      ) : null}
+
       {fullSearchOpen && (
         <div className="modal-backdrop" onClick={() => setFullSearchOpen(false)}>
           <div className="modal search-modal" onClick={(event) => event.stopPropagation()}>
@@ -1891,9 +1908,10 @@ type ShelfProps = {
   onImport: () => void
   onDetail: (book: BookMeta) => void
   onFullSearch: () => void
+  onDuplicates: () => void
 }
 
-function Shelf({ books, collections, collectionFilter, isSeries, onCollectionFilter, onCreateCollection, onToggleSeries, onRenameCollection, onDeleteCollection, onBulkAssign, onOpen, onImport, onDetail, onFullSearch }: ShelfProps) {
+function Shelf({ books, collections, collectionFilter, isSeries, onCollectionFilter, onCreateCollection, onToggleSeries, onRenameCollection, onDeleteCollection, onBulkAssign, onOpen, onImport, onDetail, onFullSearch, onDuplicates }: ShelfProps) {
   const [query, setQuery] = useState('')
   const [selectMode, setSelectMode] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -1951,6 +1969,7 @@ function Shelf({ books, collections, collectionFilter, isSeries, onCollectionFil
           </label>
           <button className="btn" onClick={onImport}>导入</button>
           <button className="btn" onClick={onFullSearch}>全文</button>
+          <button className="btn" onClick={onDuplicates}>查重</button>
           <button
             className={'btn' + (selectMode ? ' solid' : '')}
             onClick={() => { if (selectMode) exitSelect(); else setSelectMode(true) }}
@@ -2951,6 +2970,39 @@ function BookDetail({ book, collections, onAssign, onSplit, onClose, onReloaded,
     setEditAuthor(book.author)
   }, [book.id])
 
+  const changeCover = async (file: File | null) => {
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      setNote('请选择图片文件')
+      return
+    }
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const image = new Image()
+        const url = URL.createObjectURL(file)
+        image.onload = () => {
+          const scale = Math.min(1, 720 / Math.max(image.width, image.height))
+          const canvas = document.createElement('canvas')
+          canvas.width = Math.max(1, Math.round(image.width * scale))
+          canvas.height = Math.max(1, Math.round(image.height * scale))
+          const ctx = canvas.getContext('2d')
+          if (!ctx) { reject(new Error('无法处理图片')); return }
+          ctx.drawImage(image, 0, 0, canvas.width, canvas.height)
+          URL.revokeObjectURL(url)
+          resolve(canvas.toDataURL('image/jpeg', 0.85))
+        }
+        image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('图片读取失败')) }
+        image.src = url
+      })
+      const next = { ...book, coverImage: dataUrl }
+      await putBook(next)
+      onReloaded(next)
+      setNote('封面已更新')
+    } catch (error) {
+      setNote(error instanceof Error ? error.message : String(error))
+    }
+  }
+
   const saveSeries = async () => {
     const value = series.trim()
     const next: BookMeta = { ...book, series: value || undefined }
@@ -3013,6 +3065,23 @@ function BookDetail({ book, collections, onAssign, onSplit, onClose, onReloaded,
             </p>
           </div>
           <button className="modal-close" onClick={onClose}>关闭</button>
+        </div>
+
+        <div className="detail-cover">
+          <BookCover book={book} />
+          <label className="btn small">
+            更换封面
+            <input
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null
+                event.target.value = ''
+                void changeCover(file)
+              }}
+            />
+          </label>
         </div>
 
         <div className="detail-list">

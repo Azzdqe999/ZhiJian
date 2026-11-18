@@ -1819,3 +1819,12 @@ input { font-family: inherit; }
 .image-nav.next { right: 18px; }
 .image-nav:hover { border-color: var(--accent); color: var(--accent); }
 .tts-chip.tts-pause { min-width: 34px; padding: 4px 8px; font-size: 14px; line-height: 1; }
+
+.detail-cover { display: flex; align-items: flex-end; gap: 12px; margin: 4px 0 14px; }
+.detail-cover .cover { width: 96px; height: 132px; }
+.detail-cover label.btn { cursor: pointer; }
+
+.duplicate-list { display: flex; flex-direction: column; gap: 12px; max-height: 62vh; overflow-y: auto; }
+.duplicate-group { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
+.duplicate-title { margin-bottom: 6px; font-family: var(--serif); font-size: 14px; }
+.duplicate-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 5px 0; font-size: 11px; color: var(--muted); }
