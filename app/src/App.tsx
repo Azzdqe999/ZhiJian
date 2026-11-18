@@ -74,6 +74,8 @@ import AiQaModal from './components/AiQaModal'
 import DuplicateModal from './components/DuplicateModal'
 import OpdsModal from './components/OpdsModal'
 import BrightnessEdge from './components/BrightnessEdge'
+import AiBusyBar from './components/AiBusyBar'
+import { startAiBusy, stopAiBusy } from './lib/ai-busy'
 import { searchLibrary } from './lib/search'
 import { TtsPlayer, ttsSupported } from './lib/tts'
 import { setVolumePaging } from './lib/keys'
@@ -1657,6 +1659,7 @@ function App() {
         </div>
       )}
 
+      <AiBusyBar />
       {toast && <div className="toast">{toast}</div>}
 
       {card && hoveredCharacter && (
@@ -2250,8 +2253,11 @@ function Reader({
         onToast('先在设置里配置 AI')
         return
       }
+      startAiBusy('AI 正在生成章节摘要')
       setSummary(await summarizeChapter(config, chapter.title, chapter.text))
+      stopAiBusy()
     } catch (error) {
+      stopAiBusy()
       onToast('摘要失败：' + (error instanceof Error ? error.message : String(error)))
     } finally {
       setSummaryBusy(false)
@@ -2691,7 +2697,9 @@ function Reader({
                   onToast('这一章没有足够的文字')
                   return
                 }
+                startAiBusy('AI 正在抽取人物')
                 const list = await extractCharacters(config, chapter.text, { bookTitle: book.title, chapterTitle: chapter.title })
+                stopAiBusy()
                 if (!list.length) {
                   onToast('AI 没有识别到人物')
                   return
@@ -2699,6 +2707,7 @@ function Reader({
                 onAiCharacters(list, 'character')
                 onToast('AI 已加入 ' + list.length + ' 位人物')
               } catch (error) {
+                stopAiBusy()
                 onToast('AI 失败：' + (error instanceof Error ? error.message : String(error)))
               } finally {
                 setAiBusy(false)
@@ -2725,7 +2734,9 @@ function Reader({
                   onToast('这一章没有足够的文字')
                   return
                 }
+                startAiBusy('AI 正在抽取地名')
                 const list = await extractPlaces(config, chapter.text, { bookTitle: book.title, chapterTitle: chapter.title })
+                stopAiBusy()
                 if (!list.length) {
                   onToast('AI 没有识别到地名')
                   return
@@ -2733,6 +2744,7 @@ function Reader({
                 onAiCharacters(list, 'place')
                 onToast('AI 已加入 ' + list.length + ' 个地名')
               } catch (error) {
+                stopAiBusy()
                 onToast('AI 失败：' + (error instanceof Error ? error.message : String(error)))
               } finally {
                 setAiBusy(false)

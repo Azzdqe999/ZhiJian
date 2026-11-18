@@ -14,6 +14,7 @@ import BrightnessEdge from './BrightnessEdge'
 import type { NoteEditorValues } from './NoteEditor'
 import { extractCharacters, extractPlaces, loadAiConfig, summarizeChapter } from '../lib/ai'
 import { TtsPlayer, ttsSupported } from '../lib/tts'
+import { startAiBusy, stopAiBusy } from '../lib/ai-busy'
 import { setVolumePaging } from '../lib/keys'
 import { buildTtsSegments } from '../lib/tts-text'
 import { listJumps, recordJump } from '../lib/jump-history'
@@ -334,8 +335,11 @@ export default function EpubReader(props: EpubReaderProps) {
         return
       }
       const title = titleForHref(hrefRef.current, tocRef.current) || tocRef.current[indexRef.current]?.label || '本章'
+      startAiBusy('AI 正在生成章节摘要')
       setSummary(await summarizeChapter(config, title, text))
+      stopAiBusy()
     } catch (error) {
+      stopAiBusy()
       props.onToast('摘要失败：' + (error instanceof Error ? error.message : String(error)))
     } finally {
       setSummaryBusy(false)
@@ -1313,7 +1317,9 @@ export default function EpubReader(props: EpubReaderProps) {
                   props.onToast('这一章没有足够的文字')
                   return
                 }
+                startAiBusy('AI 正在抽取人物')
                 const list = await extractCharacters(config, text, { bookTitle: book.title })
+                stopAiBusy()
                 if (!list.length) {
                   props.onToast('AI 没有识别到人物')
                   return
@@ -1321,6 +1327,7 @@ export default function EpubReader(props: EpubReaderProps) {
                 props.onAiCharacters(list, 'character')
                 props.onToast('AI 已加入 ' + list.length + ' 位人物')
               } catch (error) {
+                stopAiBusy()
                 props.onToast('AI 失败：' + (error instanceof Error ? error.message : String(error)))
               } finally {
                 setAiBusy(false)
@@ -1349,7 +1356,9 @@ export default function EpubReader(props: EpubReaderProps) {
                   props.onToast('这一章没有足够的文字')
                   return
                 }
+                startAiBusy('AI 正在抽取地名')
                 const list = await extractPlaces(config, text, { bookTitle: book.title })
+                stopAiBusy()
                 if (!list.length) {
                   props.onToast('AI 没有识别到地名')
                   return
@@ -1357,6 +1366,7 @@ export default function EpubReader(props: EpubReaderProps) {
                 props.onAiCharacters(list, 'place')
                 props.onToast('AI 已加入 ' + list.length + ' 个地名')
               } catch (error) {
+                stopAiBusy()
                 props.onToast('AI 失败：' + (error instanceof Error ? error.message : String(error)))
               } finally {
                 setAiBusy(false)

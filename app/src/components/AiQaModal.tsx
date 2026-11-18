@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { askBook, loadAiConfig } from '../lib/ai'
+import { startAiBusy, stopAiBusy } from '../lib/ai-busy'
 
 type Props = {
   open: boolean
@@ -35,8 +36,11 @@ export default function AiQaModal({ open, title, context, onClose, onToast }: Pr
         onToast('先在设置里配置 AI')
         return
       }
+      startAiBusy('AI 正在回答本书问题')
       setAnswer(await askBook(config, text, '《' + title + '》\n' + context))
+      stopAiBusy()
     } catch (error) {
+      stopAiBusy()
       onToast('问书失败：' + (error instanceof Error ? error.message : String(error)))
     } finally {
       setBusy(false)

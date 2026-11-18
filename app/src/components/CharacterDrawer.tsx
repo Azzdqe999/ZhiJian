@@ -5,6 +5,7 @@ import { imageFilesFromDataTransfer } from '../lib/images'
 import { useObjectUrl } from '../lib/objectUrl'
 import CharacterAvatar from './CharacterAvatar'
 import { analyzeCharacter, loadAiConfig } from '../lib/ai'
+import { startAiBusy, stopAiBusy } from '../lib/ai-busy'
 
 type Props = {
   character: Character
@@ -77,8 +78,11 @@ export default function CharacterDrawer(props: Props) {
         setAiText('先在设置里配置 AI。')
         return
       }
+      startAiBusy('AI 正在分析人物')
       setAiText(await analyzeCharacter(config, character, related, book?.title))
+      stopAiBusy()
     } catch (error) {
+      stopAiBusy()
       setAiText('分析失败：' + (error instanceof Error ? error.message : String(error)))
     } finally {
       setAiBusy(false)
