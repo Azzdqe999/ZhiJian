@@ -72,6 +72,7 @@ import MapViewer from './components/MapViewer'
 import ReaderSheet from './components/ReaderSheet'
 import AiQaModal from './components/AiQaModal'
 import DuplicateModal from './components/DuplicateModal'
+import OpdsModal from './components/OpdsModal'
 import { searchLibrary } from './lib/search'
 import { TtsPlayer, ttsSupported } from './lib/tts'
 import { setVolumePaging } from './lib/keys'
@@ -202,6 +203,7 @@ function App() {
   const [readerSheetOpen, setReaderSheetOpen] = useState(false)
   const [fullSearchOpen, setFullSearchOpen] = useState(false)
   const [duplicatesOpen, setDuplicatesOpen] = useState(false)
+  const [opdsOpen, setOpdsOpen] = useState(false)
   const [fullQuery, setFullQuery] = useState('')
   const [fullHits, setFullHits] = useState<SearchHit[]>([])
   const [fullBusy, setFullBusy] = useState(false)
@@ -1539,6 +1541,7 @@ function App() {
           onDetail={(book) => setDetailId(book.id)}
           onFullSearch={() => { setFullQuery(''); setFullHits([]); setFullSearchOpen(true) }}
           onDuplicates={() => setDuplicatesOpen(true)}
+          onOpds={() => setOpdsOpen(true)}
         />
       ) : nav === 'notes' ? (
         <NotesPanel notes={notes} books={library} onJump={jumpToNote} onExport={exportNotes} onToast={showToast} />
@@ -1729,6 +1732,14 @@ function App() {
         </div>
       )}
 
+      {opdsOpen ? (
+        <OpdsModal
+          onClose={() => setOpdsOpen(false)}
+          onImport={(files) => { void importFiles(files) }}
+          onToast={showToast}
+        />
+      ) : null}
+
       {duplicatesOpen ? (
         <DuplicateModal
           books={library}
@@ -1909,9 +1920,10 @@ type ShelfProps = {
   onDetail: (book: BookMeta) => void
   onFullSearch: () => void
   onDuplicates: () => void
+  onOpds: () => void
 }
 
-function Shelf({ books, collections, collectionFilter, isSeries, onCollectionFilter, onCreateCollection, onToggleSeries, onRenameCollection, onDeleteCollection, onBulkAssign, onOpen, onImport, onDetail, onFullSearch, onDuplicates }: ShelfProps) {
+function Shelf({ books, collections, collectionFilter, isSeries, onCollectionFilter, onCreateCollection, onToggleSeries, onRenameCollection, onDeleteCollection, onBulkAssign, onOpen, onImport, onDetail, onFullSearch, onDuplicates, onOpds }: ShelfProps) {
   const [query, setQuery] = useState('')
   const [selectMode, setSelectMode] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -1970,6 +1982,7 @@ function Shelf({ books, collections, collectionFilter, isSeries, onCollectionFil
           <button className="btn" onClick={onImport}>导入</button>
           <button className="btn" onClick={onFullSearch}>全文</button>
           <button className="btn" onClick={onDuplicates}>查重</button>
+          <button className="btn" onClick={onOpds}>OPDS</button>
           <button
             className={'btn' + (selectMode ? ' solid' : '')}
             onClick={() => { if (selectMode) exitSelect(); else setSelectMode(true) }}
