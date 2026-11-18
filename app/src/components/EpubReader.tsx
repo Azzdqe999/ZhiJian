@@ -9,6 +9,7 @@ import { buildMatcher, matchText } from '../lib/characters'
 import type { CardRect, CharacterMatcher } from '../lib/characters'
 import type { Bookmark, BookMeta, Character, FontFamily, Note, NoteColor, Theme } from '../lib/types'
 import NoteEditor from './NoteEditor'
+import AiQaModal from './AiQaModal'
 import type { NoteEditorValues } from './NoteEditor'
 import { extractCharacters, extractPlaces, loadAiConfig, summarizeChapter } from '../lib/ai'
 import { TtsPlayer, ttsSupported } from '../lib/tts'
@@ -273,6 +274,23 @@ export default function EpubReader(props: EpubReaderProps) {
   const playerRef = useRef(new TtsPlayer())
   const [summary, setSummary] = useState<string | null>(null)
   const [summaryBusy, setSummaryBusy] = useState(false)
+  const [qaOpen, setQaOpen] = useState(false)
+  const [qaContext, setQaContext] = useState('')
+
+  useEffect(() => {
+    const onQa = () => {
+      const rendition = renditionRef.current
+      const text = rendition ? firstContents(rendition)?.document.body.innerText || '' : ''
+      if (!text.trim()) {
+        props.onToast('这一章还没有加载完')
+        return
+      }
+      setQaContext(text.slice(0, 8000))
+      setQaOpen(true)
+    }
+    window.addEventListener('paper:qa', onQa)
+    return () => window.removeEventListener('paper:qa', onQa)
+  }, [props.onToast])
 
   const showSummary = async () => {
     if (summaryBusy) return
@@ -1551,6 +1569,14 @@ export default function EpubReader(props: EpubReaderProps) {
           <button className="page-turn next" onClick={() => scrollEpubPage(renditionRef.current, 1)} title="下一页">›</button>
         </>
       ) : null}
+
+      <AiQaModal
+        open={qaOpen}
+        title={book.title}
+        context={qaContext}
+        onClose={() => setQaOpen(false)}
+        onToast={props.onToast}
+      />
 
       {summary !== null && (
         <div className="summary-backdrop" onClick={() => setSummary(null)}>

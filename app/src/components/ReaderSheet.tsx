@@ -142,6 +142,7 @@ export default function ReaderSheet({
           <div className="reader-sheet-controls">
             <button className="sheet-chip" onClick={() => window.dispatchEvent(new CustomEvent('paper:ai', { detail: { kind: 'character' } }))}>人物</button>
             <button className="sheet-chip" onClick={() => window.dispatchEvent(new CustomEvent('paper:ai', { detail: { kind: 'place' } }))}>地名</button>
+            <button className="sheet-chip" onClick={() => window.dispatchEvent(new Event('paper:qa'))}>问书</button>
           </div>
         </div>
         <div className="reader-sheet-row">

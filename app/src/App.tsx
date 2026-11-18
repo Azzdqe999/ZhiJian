@@ -70,6 +70,7 @@ import NotesPanel from './components/NotesPanel'
 import CharactersPanel from './components/CharactersPanel'
 import MapViewer from './components/MapViewer'
 import ReaderSheet from './components/ReaderSheet'
+import AiQaModal from './components/AiQaModal'
 import { searchLibrary } from './lib/search'
 import { TtsPlayer, ttsSupported } from './lib/tts'
 import { setVolumePaging } from './lib/keys'
@@ -2171,6 +2172,16 @@ function Reader({
   const playerRef = useRef(new TtsPlayer())
   const [summary, setSummary] = useState<string | null>(null)
   const [summaryBusy, setSummaryBusy] = useState(false)
+  const [qaOpen, setQaOpen] = useState(false)
+
+  useEffect(() => {
+    const onQa = () => {
+      if (chapter) setQaOpen(true)
+      else onToast('这一章还没有加载完')
+    }
+    window.addEventListener('paper:qa', onQa)
+    return () => window.removeEventListener('paper:qa', onQa)
+  }, [chapter, onToast])
 
   const showSummary = async () => {
     if (!chapter || summaryBusy) return
@@ -2772,6 +2783,14 @@ function Reader({
           <button className="tts-chip" onClick={() => { playerRef.current.stop(); setTtsPaused(false); setTtsOverlay(null); setSpeaking(false) }}>停止</button>
         </div>
       ) : null}
+
+      <AiQaModal
+        open={qaOpen}
+        title={book.title}
+        context={chapter ? chapter.title + '\n' + chapter.text.slice(0, 8000) : ''}
+        onClose={() => setQaOpen(false)}
+        onToast={onToast}
+      />
 
       {summary !== null && (
         <div className="summary-backdrop" onClick={() => setSummary(null)}>

@@ -131,6 +131,17 @@ export async function summarizeChapter(config: AiConfig, title: string, text: st
   return content.trim()
 }
 
+export async function askBook(config: AiConfig, question: string, context: string): Promise<string> {
+  const content = await chat(config, [
+    {
+      role: 'system',
+      content: '你是小说阅读助手。只根据用户提供的正文回答，不要编造正文里没有的情节。如果正文不足以回答，就直接说“当前章节没有提到”，不要猜。回答用简洁中文，必要时引用原文短句。',
+    },
+    { role: 'user', content: '参考资料：\n' + context.slice(0, 9000) + '\n\n问题：' + question },
+  ])
+  return content.trim()
+}
+
 export async function testAi(config: AiConfig): Promise<string> {
   return chat(config, [{ role: 'user', content: '只回复两个字：可用' }])
 }
