@@ -891,6 +891,41 @@ export default function EpubReader(props: EpubReaderProps) {
         bindCharacterHover(contents)
         try {
           const doc = contents.document
+          const archive = bookRef.current?.archive
+          const sectionHref = String((contents as unknown as { section?: { href?: string } }).section?.href || hrefRef.current || '')
+          const base = sectionHref.includes('/') ? sectionHref.slice(0, sectionHref.lastIndexOf('/') + 1) : ''
+          let root = ''
+          try {
+            const docUrl = new URL(doc.baseURI)
+            const segments = docUrl.pathname.replace(/^\/+/, '').split('/')
+            segments.pop()
+            root = segments.filter(Boolean).join('/')
+            if (root) root += '/'
+          } catch {
+            root = ''
+          }
+          const zipFiles = (archive as unknown as { zip?: { files?: Record<string, unknown> } })?.zip
+          const keys = Object.keys(zipFiles?.files || {})
+          for (const image of Array.from(doc.querySelectorAll('img'))) {
+            const raw = image.getAttribute('src') || ''
+            if (archive && raw && !/^(blob:|data:|https?:|\/\/)/i.test(raw) && !image.dataset.paperBlob) {
+              const joined = root + (raw.startsWith('/') ? raw.slice(1) : base + raw)
+              const parts: string[] = []
+              for (const segment of joined.split('/')) {
+                if (!segment || segment === '.') continue
+                if (segment === '..') parts.pop()
+                else parts.push(segment)
+              }
+              const path = decodeURIComponent(parts.join('/'))
+              image.dataset.paperBlob = '1'
+              const candidates = [path, path.replace(/^OPS\//i, ''), 'OPS/' + path]
+              const actual = candidates.find((candidate) => keys.some((key) => key.toLowerCase() === candidate.toLowerCase())) || path
+              // epub.js 的 Archive.getBlob 会去掉第一个字符，所以这里必须传带前导斜杠的归档路径
+              void archive.createUrl('/' + actual, { base64: false }).then((url) => {
+                if (url) image.setAttribute('src', url)
+              }).catch(() => { /* 路径不对时保留原图 */ })
+            }
+          }
           for (const image of Array.from(doc.querySelectorAll('img'))) {
             const el = image as HTMLImageElement
             if (el.dataset.paperZoom) continue
