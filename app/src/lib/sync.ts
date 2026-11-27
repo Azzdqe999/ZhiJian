@@ -81,6 +81,19 @@ function toArrayBuffer(body: Uint8Array | ArrayBuffer | null): ArrayBuffer {
   return body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) as ArrayBuffer
 }
 
+function withTimeout<T>(task: Promise<T>, ms = 90000): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error('网络请求超时，请检查网络或稍后重试')), ms)
+    task.then((value) => {
+      window.clearTimeout(timer)
+      resolve(value)
+    }, (error) => {
+      window.clearTimeout(timer)
+      reject(error)
+    })
+  })
+}
+
 async function dav(
   method: string,
   url: string,
@@ -88,17 +101,17 @@ async function dav(
   body?: string,
 ): Promise<{ status: number; text: string }> {
   if (window.paperSync) {
-    const res = await window.paperSync.request({ method, url, headers, body: body ?? null })
+    const res = await withTimeout(window.paperSync.request({ method, url, headers, body: body ?? null }))
     return { status: res.status, text: new TextDecoder().decode(toArrayBuffer(res.body)) }
   }
   if (Capacitor.isNativePlatform()) {
-    const res = await DavHttp.request({ method, url, headers, body: body ?? null })
+    const res = await withTimeout(DavHttp.request({ method, url, headers, body: body ?? null }))
     const binary = atob(res.body || '')
     const bytes = new Uint8Array(binary.length)
     for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
     return { status: res.status, text: new TextDecoder().decode(bytes) }
   }
-  const res = await fetch(url, { method, headers, body })
+  const res = await withTimeout(fetch(url, { method, headers, body }))
   return { status: res.status, text: await res.text() }
 }
 
@@ -191,17 +204,17 @@ async function s3(
   const url = s3ObjectUrl(config, name)
   const headers = await s3Headers(config, method, name, body, contentType)
   if (window.paperSync) {
-    const res = await window.paperSync.request({ method, url, headers, body: body || null })
+    const res = await withTimeout(window.paperSync.request({ method, url, headers, body: body || null }))
     return { status: res.status, text: new TextDecoder().decode(toArrayBuffer(res.body)) }
   }
   if (Capacitor.isNativePlatform()) {
-    const res = await DavHttp.request({ method, url, headers, body: body || null })
+    const res = await withTimeout(DavHttp.request({ method, url, headers, body: body || null }))
     const binary = atob(res.body || '')
     const bytes = new Uint8Array(binary.length)
     for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
     return { status: res.status, text: new TextDecoder().decode(bytes) }
   }
-  const res = await fetch(url, { method, headers, body: body || undefined })
+  const res = await withTimeout(fetch(url, { method, headers, body: body || undefined }))
   return { status: res.status, text: await res.text() }
 }
 
@@ -403,7 +416,9 @@ export type SyncResult = {
   at: number
 }
 
-export async function syncNow(): Promise<SyncResult> {
+let activeSync: Promise<SyncResult> | null = null
+
+async function performSync(): Promise<SyncResult> {
   const raw = await getSyncConfig()
   if (!raw || !raw.url || !raw.user || !raw.pass) throw new Error('还没有配置同步账号')
   const config = ensureConfig(raw)
@@ -544,6 +559,14 @@ export async function syncNow(): Promise<SyncResult> {
     devices,
     at,
   }
+}
+
+export function syncNow(): Promise<SyncResult> {
+  if (activeSync) return activeSync
+  activeSync = performSync().finally(() => {
+    activeSync = null
+  })
+  return activeSync
 }
 
 if (typeof window !== 'undefined') {
